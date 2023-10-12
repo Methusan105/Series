@@ -28,6 +28,18 @@
   </video>
 
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
+  <script>
+    var video = document.getElementById('my-video');
+
+    video.addEventListener('timeupdate', function() {
+      localStorage.setItem('videoPlaybackProgress', video.currentTime);
+    });
+
+    var savedProgress = localStorage.getItem('videoPlaybackProgress');
+    if (savedProgress) {
+      video.currentTime = parseFloat(savedProgress);
+    }
+  </script>
 </body>
 <body>
   <br>
