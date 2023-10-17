@@ -31,10 +31,10 @@
     var video = document.getElementById('my-video');
 
     video.addEventListener('timeupdate', function() {
-      localStorage.setItem('videoPlaybackProgress', video.currentTime);
+      sessionStorage.setItem('videoPlaybackProgress', video.currentTime);
     });
 
-    var savedProgress = localStorage.getItem('videoPlaybackProgress');
+    var savedProgress = sessionStorage.getItem('videoPlaybackProgress');
     if (savedProgress) {
       video.currentTime = parseFloat(savedProgress);
     }
@@ -44,6 +44,6 @@
 <body>
   <br>
     <br>
-    <a onclick="localStorage.clear()" href="/Series/Flash/S05/19.html">Next Episode</a>
+    <a onclick="sessionStorage.clear()" href="/Series/Flash/S05/19.html">Next Episode</a>
 </body>
 </html>

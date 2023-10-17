@@ -17,7 +17,7 @@
     poster="MY_VIDEO_POSTER.jpg"
     data-setup="{}"
   >
-    <source src="https://github.com/Methusan105/Series/releases/download/PB2/Prison.Break.S02E21.mkv" type="video/mp4" />
+    <source src="https://github.com/Methusan105/Series/releases/download/PB2/Prison.Break.S02E22.mkv" type="video/mp4" />
     <p class="vjs-no-js">
       To view this video please enable JavaScript, and consider upgrading to a
       web browser that
@@ -30,10 +30,10 @@
     var video = document.getElementById('my-video');
 
     video.addEventListener('timeupdate', function() {
-      localStorage.setItem('videoPlaybackProgress', video.currentTime);
+      sessionStorage.setItem('videoPlaybackProgress', video.currentTime);
     });
 
-    var savedProgress = localStorage.getItem('videoPlaybackProgress');
+    var savedProgress = sessionStorage.getItem('videoPlaybackProgress');
     if (savedProgress) {
       video.currentTime = parseFloat(savedProgress);
     }
@@ -43,6 +43,6 @@
 <body>
   <br>
     <br>
-    <a onclick="localStorage.clear()" href="/Series/Prison%20Break/Prison.html">Back to main menu</a>
+    <a onclick="sessionStorage.clear()" href="/Series/Prison%20Break/Prison.html">Back to main menu</a>
 </body>
 </html>
