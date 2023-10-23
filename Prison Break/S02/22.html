@@ -25,62 +25,69 @@
   </video>
   <script>
     var video = document.getElementById('my-video');
-    var gistFilename = 'video_progress.json';
+    var isVideoPaused = false; // Track video pause/resume status
 
     // Retrieve user credentials from sessionStorage
-    var username = sessionStorage.getItem('githubUsername');
-    var gistId = sessionStorage.getItem('githubGistId');
+    var repoOwner = sessionStorage.getItem('githubRepoOwner');
+    var repoName = sessionStorage.getItem('githubRepoName');
     var accessToken = sessionStorage.getItem('githubAccessToken');
 
     // If user credentials are not in sessionStorage, prompt for them
-    if (!username || !gistId || !accessToken) {
-      username = prompt('Enter your GitHub username:');
-      gistId = prompt('Enter your Gist ID:');
+    if (!repoOwner || !repoName || !accessToken) {
+      repoOwner = prompt('Enter your GitHub repository owner:');
+      repoName = prompt('Enter your GitHub repository name:');
       accessToken = prompt('Enter your GitHub Personal Access Token:');
 
       // Save user credentials to sessionStorage
-      sessionStorage.setItem('githubUsername', username);
-      sessionStorage.setItem('githubGistId', gistId);
+      sessionStorage.setItem('githubRepoOwner', repoOwner);
+      sessionStorage.setItem('githubRepoName', repoName);
       sessionStorage.setItem('githubAccessToken', accessToken);
     }
 
-    // Use the provided values for GitHub username, Gist ID, and token
-    var gistScript = document.createElement('script');
-    gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
-    document.head.appendChild(gistScript);
+    // Use the provided values for the repository and token
+    var progressFilePath = 'video_progress.json'; // Path to the JSON file in your repository
+    var repoUrl = `https://api.github.com/repos/${repoOwner}/${repoName}`;
+    var contentUrl = `${repoUrl}/contents/${progressFilePath}`;
 
     // Handle saving and loading video playback progress
     video.addEventListener('timeupdate', function() {
-      // Save the progress to the Gist
-      var progressData = { "progress": video.currentTime };
-      var gistData = {
-        "files": {
-          [gistFilename]: {
-            "content": JSON.stringify(progressData, null, 2)
-          }
-        }
-      };
-      fetch(`https://api.github.com/gists/${gistId}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': 'token ' + accessToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(gistData)
-      })
-      .then(response => response.json())
-      .then(data => console.log('Progress saved to Gist:', data));
+      // Check if the video is paused
+      if (video.paused && !isVideoPaused) {
+        isVideoPaused = true;
+        // Save the progress to the repository when paused
+        var progressData = { "progress": video.currentTime };
+        fetch(contentUrl, {
+          method: 'PUT',
+          headers: {
+            'Authorization': 'token ' + accessToken,
+          },
+          body: JSON.stringify({
+            message: 'Update video progress',
+            content: btoa(JSON.stringify(progressData, null, 2)),
+            sha: '' // Provide the SHA if updating an existing file
+          })
+        })
+        .then(response => response.json())
+        .then(data => console.log('Progress saved to the repository:', data));
+      }
     });
 
-    // Retrieve progress data from the Gist when the page loads
-    fetch(`https://api.github.com/gists/${gistId}`)
+    video.addEventListener('play', function() {
+      // Video resumed playing, mark it as not paused
+      isVideoPaused = false;
+    });
+
+    // Retrieve progress data from the repository when the page loads
+    fetch(contentUrl, {
+      headers: {
+        'Authorization': 'token ' + accessToken,
+      }
+    })
       .then(response => response.json())
       .then(data => {
-        if (data.files[gistFilename]) {
-          var progressData = JSON.parse(data.files[gistFilename].content);
-          if (progressData.progress) {
-            video.currentTime = parseFloat(progressData.progress);
-          }
+        var progressData = JSON.parse(atob(data.content));
+        if (progressData.progress) {
+          video.currentTime = parseFloat(progressData.progress);
         }
       });
   </script>
