@@ -24,7 +24,7 @@
   </video>
 
 
-  <script>
+   <script>
     var video = document.getElementById('my-video');
     var gistFilename = 'video_progress.json';
     var isVideoPaused = false; // Track video pause/resume status
@@ -94,6 +94,13 @@
           }
         }
       });
+
+    // Clear user credentials from sessionStorage when the tab is closed
+    window.addEventListener('beforeunload', function() {
+      sessionStorage.removeItem('githubUsername');
+      sessionStorage.removeItem('githubGistId');
+      sessionStorage.removeItem('githubAccessToken');
+    });
   </script>
   </body>
   <body>

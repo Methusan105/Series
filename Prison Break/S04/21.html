@@ -26,7 +26,7 @@
       >
     </p>
   </video>
- <script>
+  <script>
     var video = document.getElementById('my-video');
     var gistFilename = 'video_progress.json';
     var isVideoPaused = false; // Track video pause/resume status
@@ -96,6 +96,13 @@
           }
         }
       });
+
+    // Clear user credentials from sessionStorage when the tab is closed
+    window.addEventListener('beforeunload', function() {
+      sessionStorage.removeItem('githubUsername');
+      sessionStorage.removeItem('githubGistId');
+      sessionStorage.removeItem('githubAccessToken');
+    });
   </script>
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
 <script src="https://raw.githubusercontent.com/Methusan105/Series/main/Playback.js"></script>
