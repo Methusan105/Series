@@ -7,50 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.5/firebase-database.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.5/firebase-analytics.js"></script>
 
-  <script>
-    // Initialize Firebase with your project configuration
-    const firebaseConfig = {
-    apiKey: "AIzaSyBTg4dgTzK1i-YJXfTFXcC2hMoj3UIuoBg",
-    authDomain: "progress-6bb50.firebaseapp.com",
-    projectId: "progress-6bb50",
-    storageBucket: "progress-6bb50.appspot.com",
-    messagingSenderId: "1094895526120",
-    appId: "1:1094895526120:web:82fdc166910ae6636b695d"
-  };
-
-    firebase.initializeApp(firebaseConfig);
-
-    // Initialize Firebase Authentication and Realtime Database
-    const auth = firebase.auth();
-    const database = firebase.database();
-
-    // Function to save video progress for the authenticated user
-    function saveVideoProgress(videoId, progress) {
-      const user = auth.currentUser;
-      if (user) {
-        const userId = user.uid;
-        const progressRef = database.ref('videoProgress/' + userId + '/' + videoId);
-        progressRef.set(progress);
-      }
-    }
-
-    // Function to retrieve video progress for the authenticated user
-    function retrieveVideoProgress(videoId) {
-      const user = auth.currentUser;
-      if (user) {
-        const userId = user.uid;
-        const progressRef = database.ref('videoProgress/' + userId + '/' + videoId);
-        progressRef.once('value').then(snapshot => {
-          const progress = snapshot.val();
-          if (progress) {
-            // Set video playback progress based on retrieved data
-            const video = document.getElementById('my-video');
-            video.currentTime = progress;
-          }
-        });
-      }
-    }
-  </script>
+  
 </head>
 <body>
   <video
@@ -66,7 +23,82 @@
     <source src="https://github.com/Methusan105/Series/releases/download/PB3/Prison.Break.S03E12.mkv" type="video/mp4" />
   </video>
 
-  <button onclick="saveVideoProgress('video1', document.getElementById('my-video').currentTime)">Save Progress</button>
-  <button onclick="retrieveVideoProgress('video1')">Retrieve Progress</button>
+
+  <script>
+    var video = document.getElementById('my-video');
+    var gistFilename = 'video_progress.json';
+    var isVideoPaused = false; // Track video pause/resume status
+
+    // Retrieve user credentials from sessionStorage
+    var username = sessionStorage.getItem('githubUsername');
+    var gistId = sessionStorage.getItem('githubGistId');
+    var accessToken = sessionStorage.getItem('githubAccessToken');
+
+    // If user credentials are not in sessionStorage, prompt for them
+    if (!username || !gistId || !accessToken) {
+      username = prompt('Enter your GitHub username:');
+      gistId = prompt('Enter your Gist ID:');
+      accessToken = prompt('Enter your GitHub Personal Access Token:');
+
+      // Save user credentials to sessionStorage
+      sessionStorage.setItem('githubUsername', username);
+      sessionStorage.setItem('githubGistId', gistId);
+      sessionStorage.setItem('githubAccessToken', accessToken);
+    }
+
+    // Use the provided values for GitHub username, Gist ID, and token
+    var gistScript = document.createElement('script');
+    gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
+    document.head.appendChild(gistScript);
+
+    // Handle saving and loading video playback progress
+    video.addEventListener('timeupdate', function() {
+      // Check if the video is paused
+      if (video.paused && !isVideoPaused) {
+        isVideoPaused = true;
+        // Save the progress to the Gist when paused
+        var progressData = { "progress": video.currentTime };
+        var gistData = {
+          "files": {
+            [gistFilename]: {
+              "content": JSON.stringify(progressData, null, 2)
+            }
+          }
+        };
+        fetch(`https://api.github.com/gists/${gistId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'token ' + accessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(gistData)
+        })
+        .then(response => response.json())
+        .then(data => console.log('Progress saved to Gist:', data));
+      }
+    });
+
+    video.addEventListener('play', function() {
+      // Video resumed playing, mark it as not paused
+      isVideoPaused = false;
+    });
+
+    // Retrieve progress data from the Gist when the page loads
+    fetch(`https://api.github.com/gists/${gistId}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.files[gistFilename]) {
+          var progressData = JSON.parse(data.files[gistFilename].content);
+          if (progressData.progress) {
+            video.currentTime = parseFloat(progressData.progress);
+          }
+        }
+      });
+  </script>
+  </body>
+  <body>
+    <br>
+      <br>
+      <a onclick="clearGistProgress()" href="/Series/Prison%20Break/S02/11.html">Next Episode</a>
 </body>
 </html>

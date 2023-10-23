@@ -30,40 +30,57 @@
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
 <script src="https://raw.githubusercontent.com/Methusan105/Series/main/Playback.js"></script>
 
-  <script>
+ <script>
     var video = document.getElementById('my-video');
-    
-    var username = prompt('Enter your GitHub username:');
-    var repoName = prompt('Enter your GitHub repository name:');
-    var releaseId = prompt('Enter the GitHub release ID:');
-
+    var gistFilename = 'video_progress.json';
     var isVideoPaused = false; // Track video pause/resume status
+
+    // Retrieve user credentials from sessionStorage
+    var username = sessionStorage.getItem('githubUsername');
+    var gistId = sessionStorage.getItem('githubGistId');
+    var accessToken = sessionStorage.getItem('githubAccessToken');
+
+    // If user credentials are not in sessionStorage, prompt for them
+    if (!username || !gistId || !accessToken) {
+      username = prompt('Enter your GitHub username:');
+      gistId = prompt('Enter your Gist ID:');
+      accessToken = prompt('Enter your GitHub Personal Access Token:');
+
+      // Save user credentials to sessionStorage
+      sessionStorage.setItem('githubUsername', username);
+      sessionStorage.setItem('githubGistId', gistId);
+      sessionStorage.setItem('githubAccessToken', accessToken);
+    }
+
+    // Use the provided values for GitHub username, Gist ID, and token
+    var gistScript = document.createElement('script');
+    gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
+    document.head.appendChild(gistScript);
 
     // Handle saving and loading video playback progress
     video.addEventListener('timeupdate', function() {
       // Check if the video is paused
       if (video.paused && !isVideoPaused) {
         isVideoPaused = true;
-        // Save the progress to the release asset
+        // Save the progress to the Gist when paused
         var progressData = { "progress": video.currentTime };
-        var progressJSON = JSON.stringify(progressData);
-
-        // Upload the progress data as a release asset
-        var xhr = new XMLHttpRequest();
-        var url = `https://uploads.github.com/repos/${username}/${repoName}/releases/${releaseId}/assets?name=video_progress.json`;
-
-        xhr.open('POST', url, true);
-        xhr.setRequestHeader('Authorization', 'token YOUR_ACCESS_TOKEN'); // Replace with your GitHub Personal Access Token
-
-        xhr.onload = function() {
-          if (xhr.status === 201) {
-            console.log('Progress saved to the release asset.');
-          } else {
-            console.error('Error saving progress:', xhr.status, xhr.statusText);
+        var gistData = {
+          "files": {
+            [gistFilename]: {
+              "content": JSON.stringify(progressData, null, 2)
+            }
           }
         };
-
-        xhr.send(progressJSON);
+        fetch(`https://api.github.com/gists/${gistId}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'token ' + accessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(gistData)
+        })
+        .then(response => response.json())
+        .then(data => console.log('Progress saved to Gist:', data));
       }
     });
 
@@ -72,23 +89,17 @@
       isVideoPaused = false;
     });
 
-    // Retrieve progress data from the release asset when the page loads
-    var assetUrl = `https://github.com/${username}/${repoName}/releases/download/${releaseId}/video_progress.json`;
-    var xhr = new XMLHttpRequest();
-
-    xhr.open('GET', assetUrl, true);
-    xhr.responseType = 'json';
-
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        var progressData = xhr.response;
-        if (progressData.progress) {
-          video.currentTime = parseFloat(progressData.progress);
+    // Retrieve progress data from the Gist when the page loads
+    fetch(`https://api.github.com/gists/${gistId}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.files[gistFilename]) {
+          var progressData = JSON.parse(data.files[gistFilename].content);
+          if (progressData.progress) {
+            video.currentTime = parseFloat(progressData.progress);
+          }
         }
-      }
-    };
-
-    xhr.send();
+      });
   </script>
 </body>
 <body>

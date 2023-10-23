@@ -32,6 +32,7 @@
     var username = prompt('Enter your GitHub username:');
     var repoName = prompt('Enter your GitHub repository name:');
     var releaseId = prompt('Enter the GitHub release ID:');
+    var accessToken = prompt('Please enter your GitHub Personal Access Token:');
 
     var isVideoPaused = false; // Track video pause/resume status
 
@@ -49,7 +50,7 @@
         var url = `https://uploads.github.com/repos/${username}/${repoName}/releases/${releaseId}/assets?name=video_progress.json`;
 
         xhr.open('POST', url, true);
-        xhr.setRequestHeader('Authorization', 'token YOUR_ACCESS_TOKEN'); // Replace with your GitHub Personal Access Token
+        xhr.setRequestHeader('Authorization', `token ${accessToken}`); // Replace with your GitHub Personal Access Token
 
         xhr.onload = function() {
           if (xhr.status === 201) {
@@ -69,22 +70,25 @@
     });
 
     // Retrieve progress data from the release asset when the page loads
-    var assetUrl = `https://github.com/${username}/${repoName}/releases/download/${releaseId}/video_progress.json`;
-    var xhr = new XMLHttpRequest();
+    var assetUrl = `https://cors-anywhere.herokuapp.com/https://github.com/${username}/${repoName}/releases/download/${releaseId}/video_progress.json`;
 
-    xhr.open('GET', assetUrl, true);
-    xhr.responseType = 'json';
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', assetUrl, true);
+      xhr.setRequestHeader('Origin', 'https://methusan105.github.io/Series');
+      xhr.setRequestHeader('X-Requested-With', 'https://methusan105.github.io/Series');
+      xhr.responseType = 'json';
 
-    xhr.onload = function() {
-      if (xhr.status === 200) {
-        var progressData = xhr.response;
-        if (progressData.progress) {
-          video.currentTime = parseFloat(progressData.progress);
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          var progressData = xhr.response;
+          if (progressData.progress) {
+            video.currentTime = parseFloat(progressData.progress);
+          }
         }
-      }
-    };
+      };
 
-    xhr.send();
+xhr.send();
+
   </script>
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
 <script src="https://raw.githubusercontent.com/Methusan105/Series/main/Playback.js"></script>
