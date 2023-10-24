@@ -72,7 +72,7 @@
         fetch(`https://api.github.com/gists/${gistId}`, {
           method: 'PATCH',
           headers: {
-            'Authorization': 'token ' + accessToken,
+            'Authorization': 'token ' + `${accessToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(gistData)
