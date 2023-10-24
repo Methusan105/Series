@@ -10,7 +10,7 @@
       fetch(`https://api.github.com/gists/${gistId}`, {
         method: 'PATCH',
         headers: {
-          'Authorization': 'token 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', // Replace with your GitHub Personal Access Token
+          'Authorization': 'token ' + `${accessToken}`, // Replace with your GitHub Personal Access Token
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(gistData)
