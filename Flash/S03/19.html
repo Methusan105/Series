@@ -28,6 +28,7 @@
   </video>
   <script>
     var video = document.getElementById('my-video');
+    document.addEventListener('DOMContentLoaded', function () {
     var gistFilename = 'video_progress.json';
     var isVideoPaused = false; // Track video pause/resume status
 
@@ -103,7 +104,7 @@
       sessionStorage.removeItem('githubGistId');
       sessionStorage.removeItem('githubAccessToken');
     });
-  </script>
+  });
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
 <script src="https://raw.githubusercontent.com/Methusan105/Series/main/Playback.js"></script>
 
