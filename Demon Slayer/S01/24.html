@@ -30,83 +30,86 @@
   <script>
     var video = document.getElementById('my-video');
     document.addEventListener('DOMContentLoaded', function () {
-    var gistFilename = 'video_progress.json';
-    var isVideoPaused = false; // Track video pause/resume status
+      var gistFilename = 'video_progress.json';
+      var isVideoPaused = false; // Track video pause/resume status
 
-    // Retrieve user credentials from sessionStorage
-    var username = sessionStorage.getItem('githubUsername');
-    var gistId = sessionStorage.getItem('githubGistId');
-    var accessToken = sessionStorage.getItem('githubAccessToken');
+      // Retrieve user credentials from sessionStorage
+      var username = sessionStorage.getItem('githubUsername');
+      var gistId = sessionStorage.getItem('githubGistId');
+      var accessToken = sessionStorage.getItem('githubAccessToken');
 
-    // If user credentials are not in sessionStorage, prompt for them
-    if (!username || !gistId || !accessToken) {
-      username = prompt('Enter your GitHub username:');
-      gistId = prompt('Enter your Gist ID:');
-      accessToken = prompt('Enter your GitHub Personal Access Token:');
+      // If user credentials are not in sessionStorage, prompt for them
+      if (!username || !gistId || !accessToken) {
+        username = prompt('Enter your GitHub username:');
+        gistId = prompt('Enter your Gist ID:');
+        accessToken = prompt('Enter your GitHub Personal Access Token:');
 
-      // Save user credentials to sessionStorage
-      sessionStorage.setItem('githubUsername', username);
-      sessionStorage.setItem('githubGistId', gistId);
-      sessionStorage.setItem('githubAccessToken', accessToken);
-    }
-
-    // Use the provided values for GitHub username, Gist ID, and token
-    var gistScript = document.createElement('script');
-    gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
-    document.head.appendChild(gistScript);
-
-    // Handle saving and loading video playback progress
-    video.addEventListener('timeupdate', function() {
-      // Check if the video is paused
-      if (video.paused && !isVideoPaused) {
-        isVideoPaused = true;
-        // Save the progress to the Gist when paused
-        var progressData = { "progress": video.currentTime };
-        var gistData = {
-          "files": {
-            [gistFilename]: {
-              "content": JSON.stringify(progressData, null, 2)
-            }
-          }
-        };
-        fetch(`https://api.github.com/gists/${gistId}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': 'token ' + `${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(gistData)
-        })
-        .then(response => response.json())
-        .then(data => console.log('Progress saved to Gist:', data));
+        // Save user credentials to sessionStorage
+        sessionStorage.setItem('githubUsername', username);
+        sessionStorage.setItem('githubGistId', gistId);
+        sessionStorage.setItem('githubAccessToken', accessToken);
       }
-    });
 
-    video.addEventListener('play', function() {
-      // Video resumed playing, mark it as not paused
-      isVideoPaused = false;
-    });
+      // Use the provided values for GitHub username, Gist ID, and token
+      var gistScript = document.createElement('script');
+      gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
+      document.head.appendChild(gistScript);
 
-    // Retrieve progress data from the Gist when the page loads
-    fetch(`https://api.github.com/gists/${gistId}`)
-      .then(response => response.json())
-      .then(data => {
-        if (data.files[gistFilename]) {
-          var progressData = JSON.parse(data.files[gistFilename].content);
-          if (progressData.progress) {
-            video.currentTime = parseFloat(progressData.progress);
-          }
+      // Handle saving and loading video playback progress
+      video.addEventListener('timeupdate', function () {
+        // Check if the video is paused
+        if (video.paused && !isVideoPaused) {
+          isVideoPaused = true;
+          // Save the progress to the Gist when paused
+          var progressData = {
+            "progress": video.currentTime,
+            "url": window.location.href // Add the URL here
+          };
+          var gistData = {
+            "files": {
+              [gistFilename]: {
+                "content": JSON.stringify(progressData, null, 2)
+              }
+            }
+          };
+          fetch(`https://api.github.com/gists/${gistId}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': 'token ' + `${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(gistData)
+          })
+            .then(response => response.json())
+            .then(data => console.log('Progress saved to Gist:', data));
         }
       });
 
-    // Clear user credentials from sessionStorage when the tab is closed
-    window.addEventListener('beforeunload', function() {
-      sessionStorage.removeItem('githubUsername');
-      sessionStorage.removeItem('githubGistId');
-      sessionStorage.removeItem('githubAccessToken');
+      video.addEventListener('play', function () {
+        // Video resumed playing, mark it as not paused
+        isVideoPaused = false;
+      });
+
+      // Retrieve progress data from the Gist when the page loads
+      fetch(`https://api.github.com/gists/${gistId}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.files[gistFilename]) {
+            var progressData = JSON.parse(data.files[gistFilename].content);
+            if (progressData.progress) {
+              video.currentTime = parseFloat(progressData.progress);
+            }
+          }
+        });
+
+      // Clear user credentials from sessionStorage when the tab is closed
+      window.addEventListener('beforeunload', function () {
+        sessionStorage.removeItem('githubUsername');
+        sessionStorage.removeItem('githubGistId');
+        sessionStorage.removeItem('githubAccessToken');
+      });
     });
-  });
-</script>
+  </script>
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
 <script src="/Series/Playback.js"></script>
 
