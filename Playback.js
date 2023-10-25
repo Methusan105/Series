@@ -7,29 +7,27 @@ function clearGistProgress() {
   var gistFilename = 'video_progress.json';
 
   // Check if user credentials are available
+  var gistData = {
+    "files": {
+      [gistFilename]: {
+        "content": JSON.stringify(12, null, 2)
+      }
+    }
+  }
   if (username && gistId && accessToken) {
     // Delete the file from the Gist
     fetch(`https://api.github.com/gists/${gistId}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': 'token ' + `${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        "files": {
-          [gistFilename]: null
-        }
-      })
-    })
-    .then(response => {
-      if (response.ok) {
-        console.log('Progress cleared from Gist');
-      } else {
-        console.error('Failed to clear progress from Gist');
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'token ' + `${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(gistData)
+        })
+        .then(response => response.json())
+        .then(data => console.log('Progress saved to Gist:', data));
       }
-    });
-  }
-}
+    };
 
 // Function to redirect to the next episode
 function goToNextEpisode() {
