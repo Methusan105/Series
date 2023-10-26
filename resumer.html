@@ -8,29 +8,29 @@
 <body>
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-        var gistFilename = 'video_progress.json';
+      var gistFilename = 'video_progress.json';
 
-        // Retrieve user credentials from sessionStorage
-        var username = sessionStorage.getItem('githubUsername');
-        var gistId = sessionStorage.getItem('githubGistId');
-        var accessToken = sessionStorage.getItem('githubAccessToken');
+      // Retrieve user credentials from sessionStorage
+      var username = sessionStorage.getItem('githubUsername');
+      var gistId = sessionStorage.getItem('githubGistId');
+      var accessToken = sessionStorage.getItem('githubAccessToken');
 
-        // If user credentials are not in sessionStorage, prompt for them
-        if (!username || !gistId || !accessToken) {
-            username = prompt('Enter your GitHub username:');
-            gistId = prompt('Enter your Gist ID:');
-            accessToken = prompt('Enter your GitHub Personal Access Token:');
+      // If user credentials are not in sessionStorage, prompt for them
+      if (!username || !gistId || !accessToken) {
+        username = prompt('Enter your GitHub username:');
+        gistId = prompt('Enter your Gist ID:');
+        accessToken = prompt('Enter your GitHub Personal Access Token:');
 
-            // Save user credentials to sessionStorage
-            sessionStorage.setItem('githubUsername', username);
-            sessionStorage.setItem('githubGistId', gistId);
-            sessionStorage.setItem('githubAccessToken', accessToken);
-        }
-    
-          // Use the provided values for GitHub username, Gist ID, and token
-          var gistScript = document.createElement('script');
-          gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
-          document.head.appendChild(gistScript);
+        // Save user credentials to sessionStorage
+        sessionStorage.setItem('githubUsername', username);
+        sessionStorage.setItem('githubGistId', gistId);
+        sessionStorage.setItem('githubAccessToken', accessToken);
+      }
+
+      // Use the provided values for GitHub username, Gist ID, and token
+      var gistScript = document.createElement('script');
+      gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
+      document.head.appendChild(gistScript);
     
           // Retrieve the URL from the Gist when the page loads
           fetch(`https://api.github.com/gists/${gistId}`)
