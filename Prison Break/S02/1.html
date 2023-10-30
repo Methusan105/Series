@@ -60,18 +60,45 @@
 
       // Function to handle the network error
       function handleNetworkError() {
-        console.log('A network error has occurred. Refreshing video...');
-        video.load();
-        fetch(`https://api.github.com/gists/${gistId}`)
+      console.log('A network error has occurred. Refreshing video...');
+
+      // Save the progress to the Gist when a network error occurs
+      var gistData = {
+        "files": {
+          [gistFilename]: {
+            "content": JSON.stringify({ "progress": video.currentTime }, null, 2)
+          }
+        }
+      };
+
+      fetch(`https://api.github.com/gists/${gistId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'token ' + `${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(gistData)
+      })
         .then(response => response.json())
         .then(data => {
-          if (data.files[gistFilename]) {
-            var progressData = JSON.parse(data.files[gistFilename].content);
-            if (progressData.progress) {
-              video.currentTime = parseFloat(progressData.progress);
-            }
-          }
+          console.log('Progress saved to Gist:', data);
+
+          // Now load the video after saving the progress
+          video.load();
+
+          // Retrieve progress data from Gist and set currentTime
+          fetch(`https://api.github.com/gists/${gistId}`)
+            .then(response => response.json())
+            .then(data => {
+              if (data.files[gistFilename]) {
+                var progressData = JSON.parse(data.files[gistFilename].content);
+                if (progressData.progress) {
+                  video.currentTime = parseFloat(progressData.progress);
+                }
+              }
+            });
         });
+
 
         // Retrieve progress data from Gist and set currentTime
         fetch(`https://api.github.com/gists/${gistId}`)
@@ -84,6 +111,7 @@
               }
             }
           });
+        video.play()
       }
 
       // Add an error event listener to the video element
