@@ -62,12 +62,16 @@
       function handleNetworkError() {
         console.log('A network error has occurred. Refreshing video...');
         video.load();
-        if (data.files[gistFilename]) {
-              var progressData = JSON.parse(data.files[gistFilename].content);
-              if (progressData.progress) {
-                video.currentTime = parseFloat(progressData.progress);
-      }
-    }
+        fetch(`https://api.github.com/gists/${gistId}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.files[gistFilename]) {
+            var progressData = JSON.parse(data.files[gistFilename].content);
+            if (progressData.progress) {
+              video.currentTime = parseFloat(progressData.progress);
+            }
+          }
+        });
 
         // Retrieve progress data from Gist and set currentTime
         fetch(`https://api.github.com/gists/${gistId}`)
