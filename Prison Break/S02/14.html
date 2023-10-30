@@ -54,6 +54,35 @@
       gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
       document.head.appendChild(gistScript);
 
+      // Function to handle the network error
+      function handleNetworkError() {
+        console.log('A network error has occurred. Refreshing video...');
+        video.load();
+        if (progressData.progress) {
+        video.currentTime = parseFloat(progressData.progress);
+      }
+
+
+        // Retrieve progress data from Gist and set currentTime
+        fetch(`https://api.github.com/gists/${gistId}`)
+          .then(response => response.json())
+          .then(data => {
+            if (data.files[gistFilename]) {
+              var progressData = JSON.parse(data.files[gistFilename].content);
+              if (progressData.progress) {
+                video.currentTime = parseFloat(progressData.progress);
+              }
+            }
+          });
+      }
+
+      // Add an error event listener to the video element
+      video.addEventListener('error', function () {
+        if (video.error && video.error.code === 2) {
+          handleNetworkError();
+        }
+      });
+
       // Handle saving and loading video playback progress
       video.addEventListener('timeupdate', function () {
         // Check if the video is paused
@@ -108,7 +137,7 @@
         sessionStorage.removeItem('githubAccessToken');
       });
     });
-  </script>
+</script>
   <script src="https://vjs.zencdn.net/8.5.2/video.min.js"></script>
 <script src="/Series/Playback.js"></script>
 
