@@ -79,34 +79,41 @@
         }
 
       // Add an error event listener to the video element
-      video.addEventListener('error', function () {
-        if (video.error && video.error.code === 2) {
-           // Save the progress to the Gist when time updates
-            var progressData = {
-              "progress": video.currentTime,
-              "url": window.location.href // Add the URL here
-            };
-            var gistData = {
-              "files": {
-                [gistFilename]: {
-                  "content": JSON.stringify(progressData, null, 2)
-                }
-              }
-            };
-            fetch(`https://api.github.com/gists/${gistId}`, {
-              method: 'PATCH',
-              headers: {
-                'Authorization': 'token ' + `${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(gistData)
-            })
-              .then(response => response.json())
-              .then(data => console.log('Progress saved to Gist:', data));
-              handleNetworkError();
-              video.play()
+     video.addEventListener('error', function () {
+  if (video.error && video.error.code === 2) {
+    // Save the progress to the Gist when a network error occurs
+    var progressData = {
+      "progress": video.currentTime,
+      "url": window.location.href // Add the URL here
+    };
+    var gistData = {
+      "files": {
+        [gistFilename]: {
+          "content": JSON.stringify(progressData, null, 2)
         }
+      }
+    };
+    fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'token ' + `${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(gistData)
+    })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Progress saved to Gist:', data);
+
+        // Introduce a 3-second timeout before calling handleNetworkError() and playing the video
+        setTimeout(function () {
+          handleNetworkError();
+          video.play();
+        }, 3000);
       });
+  }
+});
+
 
       // Handle saving and loading video playback progress
       video.addEventListener('timeupdate', function () {
