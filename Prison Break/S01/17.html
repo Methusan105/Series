@@ -27,20 +27,47 @@
       >
     </p>
   </video>
-<script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
-  <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
 <script>
     var video = document.getElementById('my-video');
     var isVideoPaused = false; // Track video pause/resume status
-    videojs('my-video', {
-        plugins: {
-            hotkeys: {
-            volumeStep: 0.1,
-            seekStep: 5,
-            enableModifiersForNumbers: false
-            },
-        },
+
+    // Add event listeners for keydown events
+    document.addEventListener('keydown', function(event) {
+        // Pause/unpause video when space key is pressed
+        if (event.code === 'Space') {
+            if (video.paused) {
+                video.play();
+            } else {
+                video.pause();
+            }
+        }
+
+        // Toggle fullscreen when 'f' key is pressed
+        if (event.key === 'f') {
+            toggleFullScreen();
+        }
     });
+
+    // Function to toggle fullscreen mode
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) {
+            if (video.requestFullscreen) {
+                video.requestFullscreen();
+            } else if (video.webkitRequestFullscreen) { /* Safari */
+                video.webkitRequestFullscreen();
+            } else if (video.msRequestFullscreen) { /* IE11 */
+                video.msRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari */
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) { /* IE11 */
+                document.msExitFullscreen();
+            }
+        }
+    }
 
     document.addEventListener('DOMContentLoaded', function () {
         var gistFilename = 'video_progress.json';
@@ -229,3 +256,13 @@
         }
     });
 </script>
+  <script src="https://vjs.zencdn.net/8.6.1/video.min.js"></script>
+<script src="/Series/Playback.js"></script>
+
+</body>
+<body>
+  <br>
+    <br>
+    <a onclick="clearGistProgress()" href="/Series/Prison%20Break/S01/18.html">Next Episode</a>
+</body>
+</html>
