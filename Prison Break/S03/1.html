@@ -31,16 +31,18 @@
 <script src="/Series/Playback.js"></script>
 <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
 <script>
-    videojs('my-video', {
-  plugins: {
-    hotkeys: {
-      volumeStep: 0.1,
-      seekStep: 5,
-      enableModifiersForNumbers: false,
-      alwaysCaptureHotkeys: true
-    },
-  },
-});
+    document.addEventListener('DOMContentLoaded', function () {
+        videojs('my-video', {
+            plugins: {
+                hotkeys: {
+                    volumeStep: 0.1,
+                    seekStep: 5,
+                    enableModifiersForNumbers: false,
+                    alwaysCaptureHotkeys: true
+                },
+            },
+        });
+    });
 </script>
 
 <script>
