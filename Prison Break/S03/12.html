@@ -26,8 +26,35 @@
 
  <script>
     var video = document.getElementById('my-video');
-    
+    var player = videojs("my-video");
+    var spacePressed = false;
+        
     document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener("keydown", function (event) {
+            if (event.key === " ") {
+                event.preventDefault(); // Prevent default spacebar behavior (scrolling down)
+                togglePause();
+            }
+            if (event.key === "f") {
+                fullscr();
+            }
+        });
+
+        function togglePause() {
+            if (player.paused()) {
+                player.play();
+            } else {
+                player.pause();
+            }
+        }
+        function fullscr() {
+            if (player.isFullscreen()) {
+                player.exitFullscreen();
+            } else {
+                player.requestFullscreen();
+            }
+        }
+        
         var gistFilename = 'video_progress.json';
         var isVideoPaused = false; // Track video pause/resume status
 
