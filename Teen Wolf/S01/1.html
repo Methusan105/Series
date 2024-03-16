@@ -17,8 +17,7 @@
     poster="MY_VIDEO_POSTER.jpg"
     data-setup="{}"
   >
-    <source src="https://github.com/Methusan105/Series/releases/download/M2/The.Mandalorian.S02E08.mp4" type="video/mp4" />
-    <track kind="subtitles" src="" srclang="en" label="English" default>
+    <source src="https://github.com/Methusan105/Series/releases/download/TW1/Teen.Wolf.S01E01.mkv" type="video/mp4" />
     <p class="vjs-no-js">
       To view this video please enable JavaScript, and consider upgrading to a
       web browser that
@@ -27,6 +26,25 @@
       >
     </p>
   </video>
+
+
+<script src="/Series/Playback.js"></script>
+<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        videojs('my-video', {
+            plugins: {
+                hotkeys: {
+                    volumeStep: 0.1,
+                    seekStep: 5,
+                    enableModifiersForNumbers: false,
+                    alwaysCaptureHotkeys: true
+                },
+            },
+        });
+    });
+</script>
+
 <script>
     var video = document.getElementById('my-video');
     var player = videojs("my-video");
@@ -244,28 +262,10 @@
         }
     });
 </script>
-
-<script src="/Series/Playback.js"></script>
-<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        videojs('my-video', {
-            plugins: {
-                hotkeys: {
-                    volumeStep: 0.1,
-                    seekStep: 5,
-                    enableModifiersForNumbers: false,
-                    alwaysCaptureHotkeys: true
-                },
-            },
-        });
-    });
-</script>
-
 </body>
 <body>
   <br>
     <br>
-    <a onclick="clearGistProgress()" href="/Series/Mandalorian/Mandalorian.html">Back to main menu</a>
+    <a onclick="clearGistProgress()" href="/Series/Teen%20Wolf/S01/2.html">Next Episode</a>
 </body>
 </html>
