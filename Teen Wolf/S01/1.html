@@ -29,22 +29,6 @@
 
 
 <script src="/Series/Playback.js"></script>
-<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        videojs('my-video', {
-            plugins: {
-                hotkeys: {
-                    volumeStep: 0.1,
-                    seekStep: 5,
-                    enableModifiersForNumbers: false,
-                    alwaysCaptureHotkeys: true
-                },
-            },
-        });
-    });
-</script>
-
 <script>
     var video = document.getElementById('my-video');
     var player = videojs("my-video");
@@ -260,6 +244,23 @@
                 sessionStorage.removeItem('githubAccessToken');
             });
         }
+    });
+</script>
+
+<script src="/Series/Playback.js"></script>
+<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        videojs('my-video', {
+            plugins: {
+                hotkeys: {
+                    volumeStep: 0.1,
+                    seekStep: 5,
+                    enableModifiersForNumbers: false,
+                    alwaysCaptureHotkeys: true
+                },
+            },
+        });
     });
 </script>
 </body>
