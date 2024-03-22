@@ -19,18 +19,32 @@
   
       // If user credentials are not in sessionStorage, ask for a file input
       if (!username || !gistId || !accessToken) {
-        if (!document.getElementById('fileInput')) {
-          var fileInput = createFileInput();
-          document.body.appendChild(fileInput);
-          button.addEventListener('click', function () {
-            fileInput.click();
-          });
-          document.body.appendChild(button);
+            var isTV = detectTV(); // Function to detect if user is on TV
+
+            if (isTV) {
+                var fileContent = prompt('Paste the content of your text file here:');
+                if (fileContent) {
+                    processFileContent(fileContent);
+                }
+                setupGistScript();
+            } else {
+                if (!document.getElementById('fileInput')) {
+                        var fileInput = createFileInput();
+                        document.body.appendChild(fileInput);
+                        button.addEventListener('click', function() {
+                            fileInput.click();
+                        });
+                        document.body.appendChild(button);
+                    }
+            }
+        } else {
+            setupGistScript();
         }
-      } else {
-        setupGistScript();
-      }
-  
+        function detectTV() {
+        // Example check based on user agent string for TV
+        var userAgent = navigator.userAgent.toLowerCase();
+        return userAgent.includes('tv');
+    }
       function createFileInput() {
         var input = document.createElement('input');
         input.id = 'fileInput';
