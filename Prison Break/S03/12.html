@@ -22,7 +22,9 @@
   >
     <source src="https://github.com/Methusan105/Series/releases/download/PB3/Prison.Break.S03E12.mkv" type="video/mp4" />
   </video>
-<script>
+
+
+ <script>
     var video = document.getElementById('my-video');
     var player = videojs("my-video");
     var spacePressed = false;
@@ -63,33 +65,17 @@
 
         // If user credentials are not in sessionStorage, ask for a file input
         if (!username || !gistId || !accessToken) {
-            var isTV = detectTV(); // Function to detect if user is on TV
-
-            if (isTV) {
-                var fileContent = prompt('Paste the content of your text file here:');
-                if (fileContent) {
-                    processFileContent(fileContent);
-                }
-                setupVideoPlayback();
-            } else {
-                if (!document.getElementById('fileInput')) {
-                        var fileInput = createFileInput();
-                        document.body.appendChild(fileInput);
-                        button.addEventListener('click', function() {
-                            fileInput.click();
-                        });
-                        document.body.appendChild(button);
-                    }
+            if (!document.getElementById('fileInput')) {
+                var fileInput = createFileInput();
+                document.body.appendChild(fileInput);
+                button.addEventListener('click', function() {
+                    fileInput.click();
+                });
+                document.body.appendChild(button);
             }
         } else {
             setupVideoPlayback();
         }
-
-function detectTV() {
-    // Example check based on user agent string for TV
-    var userAgent = navigator.userAgent.toLowerCase();
-    return userAgent.includes('tv');
-}
 
         function createFileInput() {
             var input = document.createElement('input');
@@ -254,10 +240,7 @@ function detectTV() {
             });
         }
     });
-  </script>
-
-
- 
+</script>
   </body>
   <body>
     <br>

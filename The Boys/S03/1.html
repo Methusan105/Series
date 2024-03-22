@@ -3,7 +3,6 @@
 <head>
   <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
   <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
-  
   <!-- If you'd like to support IE8 (for Video.js versions prior to v7) -->
   <!-- <script src="https://vjs.zencdn.net/ie8/1.1.2/videojs-ie8.min.js"></script> -->
 </head>
@@ -28,7 +27,7 @@
       >
     </p>
   </video>
-<script>
+  <script>
     var video = document.getElementById('my-video');
     var player = videojs("my-video");
     var spacePressed = false;
@@ -69,33 +68,17 @@
 
         // If user credentials are not in sessionStorage, ask for a file input
         if (!username || !gistId || !accessToken) {
-            var isTV = detectTV(); // Function to detect if user is on TV
-
-            if (isTV) {
-                var fileContent = prompt('Paste the content of your text file here:');
-                if (fileContent) {
-                    processFileContent(fileContent);
-                }
-                setupVideoPlayback();
-            } else {
-                if (!document.getElementById('fileInput')) {
-                        var fileInput = createFileInput();
-                        document.body.appendChild(fileInput);
-                        button.addEventListener('click', function() {
-                            fileInput.click();
-                        });
-                        document.body.appendChild(button);
-                    }
+            if (!document.getElementById('fileInput')) {
+                var fileInput = createFileInput();
+                document.body.appendChild(fileInput);
+                button.addEventListener('click', function() {
+                    fileInput.click();
+                });
+                document.body.appendChild(button);
             }
         } else {
             setupVideoPlayback();
         }
-
-function detectTV() {
-    // Example check based on user agent string for TV
-    var userAgent = navigator.userAgent.toLowerCase();
-    return userAgent.includes('tv');
-}
 
         function createFileInput() {
             var input = document.createElement('input');
@@ -260,8 +243,7 @@ function detectTV() {
             });
         }
     });
-  </script>
-  
+</script>
 
 
 <script src="/Series/Playback.js"></script>
