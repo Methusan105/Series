@@ -18,7 +18,7 @@
   
       // If user credentials are not in sessionStorage, ask for a file input
       if (!username || !gistId || !accessToken) {
-        var istv = detectTV()
+        var isTV = detectTV()
             if (isTV) {
                 username = prompt('Enter your GitHub username:');
                 gistId = prompt('Enter your Gist ID:');
@@ -39,7 +39,7 @@
       } else {
         setupGistScript();
       }
-      
+
       function detectTV() {
         // Example check based on user agent string for TV
         var userAgent = navigator.userAgent.toLowerCase();
