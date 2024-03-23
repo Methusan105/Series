@@ -67,6 +67,16 @@
 
         // If user credentials are not in sessionStorage, ask for a file input
         if (!username || !gistId || !accessToken) {
+            var istv = detectTV()
+            if (isTV) {
+                username = prompt('Enter your GitHub username:');
+                gistId = prompt('Enter your Gist ID:');
+                accessToken = prompt('Enter your GitHub Personal Access Token:');
+                sessionStorage.setItem('githubUsername', username);
+                sessionStorage.setItem('githubGistId', gistId);
+                sessionStorage.setItem('githubAccessToken', accessToken);
+                setupVideoPlayback();
+            }
             if (!document.getElementById('fileInput')) {
                 var fileInput = createFileInput();
                 document.body.appendChild(fileInput);
@@ -78,7 +88,11 @@
         } else {
             setupVideoPlayback();
         }
-
+        function detectTV() {
+        // Example check based on user agent string for TV
+        var userAgent = navigator.userAgent.toLowerCase();
+        return userAgent.includes('tv');
+    }   
         function createFileInput() {
             var input = document.createElement('input');
             input.id = 'fileInput';
@@ -243,6 +257,7 @@
         }
     });
 </script>
+
   
 <script src="/Series/Playback.js"></script>
 <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
