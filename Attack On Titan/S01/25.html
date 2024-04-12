@@ -41,6 +41,12 @@ Attack On Titan/24.html<!DOCTYPE html>
             if (event.key === "f") {
                 fullscr();
             }
+            if (event.key === "ArrowLeft") { // Seek backward when left arrow key is pressed
+                seekBackward();
+            }
+            if (event.key === "ArrowRight") { // Seek forward when right arrow key is pressed
+                seekForward();
+            }
         });
 
         function togglePause() {
@@ -50,12 +56,21 @@ Attack On Titan/24.html<!DOCTYPE html>
                 player.pause();
             }
         }
+
         function fullscr() {
             if (player.isFullscreen()) {
                 player.exitFullscreen();
             } else {
                 player.requestFullscreen();
             }
+        }
+
+        function seekForward() {
+            player.currentTime(player.currentTime() + 5); // Seek 5 seconds forward
+        }
+
+        function seekBackward() {
+            player.currentTime(player.currentTime() - 5); // Seek 5 seconds backward
         }
         
         var gistFilename = 'video_progress.json';
@@ -258,6 +273,7 @@ Attack On Titan/24.html<!DOCTYPE html>
         }
     });
 </script>
+
 
 
 <script src="/Series/Playback.js"></script>
