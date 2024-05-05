@@ -1,9 +1,9 @@
 import os
 
-release_file_path = r"C:\Users\Methu\Videos\Knuckles.S01E"
+release_file_path = r"C:\Users\Methu\Videos\Lucifer.S01E"
 
 # Assuming you want to iterate from 2 to 29
-for i in range(6, 7):
+for i in range(1, 7):
     file_number = f"{i:02d}"  # Format the number with leading zeros
     file_path = f'{release_file_path}{file_number}.mp4'
     
