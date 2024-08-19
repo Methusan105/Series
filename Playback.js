@@ -25,7 +25,7 @@ function clearGistProgress() {
           body: JSON.stringify(gistData)
         })
         .then(response => response.json())
-        .then(data => console.log('Progress saved to Gist:', data));
+        .then(data => console.log('Progress Cleared from Gist:', data));
       }
     };
 
