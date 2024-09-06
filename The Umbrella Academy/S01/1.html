@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+  <!-- If you'd like to support IE8 (for Video.js versions prior to v7) -->
+  <!-- <script src="https://vjs.zencdn.net/ie8/1.1.2/videojs-ie8.min.js"></script> -->
+</head>
+<body>
+  <video
+    id="my-video"
+    class="video-js"
+    controls
+    preload="auto"
+    width="640"
+    height="264"
+    poster="MY_VIDEO_POSTER.jpg"
+    data-setup='{ "customControlsOnMobile": true, "nativeControlsForTouch": false }'
+  >
+    <source src="https://github.com/Methusan105/Series/releases/download/TUA1/The.Umbrella.Academy.S01E01.mp4" type="video/mp4" />
+    <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/The%20Umbrella%20Academy/S01/Subs/The.Umbrella.Academy.S01E01.vtt" srclang="en" label="English" default>
+    <p class="vjs-no-js">
+      To view this video please enable JavaScript, and consider upgrading to a
+      web browser that
+      <a href="https://videojs.com/html5-video-support/" target="_blank"
+        >supports HTML5 video</a
+      >
+    </p>
+  </video>
+<script>
+    var video = document.getElementById('my-video');
+    var player = videojs("my-video");
+    var spacePressed = false;
+        
+    document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener("keydown", function (event) {
+            if (event.key === " ") {
+                event.preventDefault(); // Prevent default spacebar behavior (scrolling down)
+                togglePause();
+            }
+            if (event.key === "f") {
+                fullscr();
+            }
+            if (event.key === "ArrowLeft") { // Seek backward when left arrow key is pressed
+                seekBackward();
+            }
+            if (event.key === "ArrowRight") { // Seek forward when right arrow key is pressed
+                seekForward();
+            }
+        });
+
+        function togglePause() {
+            if (player.paused()) {
+                player.play();
+            } else {
+                player.pause();
+            }
+        }
+
+        function fullscr() {
+            if (player.isFullscreen()) {
+                player.exitFullscreen();
+            } else {
+                player.requestFullscreen();
+            }
+        }
+
+        function seekForward() {
+            player.currentTime(player.currentTime() + 5); // Seek 5 seconds forward
+        }
+
+        function seekBackward() {
+            player.currentTime(player.currentTime() - 5); // Seek 5 seconds backward
+        }
+        
+        var gistFilename = 'video_progress.json';
+        var isVideoPaused = false; // Track video pause/resume status
+
+        // Retrieve user credentials from sessionStorage
+        var username = sessionStorage.getItem('githubUsername');
+        var gistId = sessionStorage.getItem('githubGistId');
+        var accessToken = sessionStorage.getItem('githubAccessToken');
+
+        // If user credentials are not in sessionStorage, ask for a file input
+        if (!username || !gistId || !accessToken) {
+            var isTV = detectTV()
+            if (isTV) {
+                username = prompt('Enter your GitHub username:');
+                gistId = prompt('Enter your Gist ID:');
+                accessToken = prompt('Enter your GitHub Personal Access Token:');
+                sessionStorage.setItem('githubUsername', username);
+                sessionStorage.setItem('githubGistId', gistId);
+                sessionStorage.setItem('githubAccessToken', accessToken);
+                setupVideoPlayback();
+            }
+            if (!document.getElementById('fileInput')) {
+                var fileInput = createFileInput();
+                document.body.appendChild(fileInput);
+                button.addEventListener('click', function() {
+                    fileInput.click();
+                });
+                document.body.appendChild(button);
+            }
+        } else {
+            setupVideoPlayback();
+        }
+        function detectTV() {
+        // Example check based on user agent string for TV
+        var userAgent = navigator.userAgent.toLowerCase();
+        return userAgent.includes('tv');
+    }   
+        function createFileInput() {
+            var input = document.createElement('input');
+            input.id = 'fileInput';
+            input.type = 'file';
+            input.accept = '.txt';
+            input.addEventListener('change', function(event) {
+                var file = event.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        processFileContent(e.target.result);
+                    };
+                    reader.readAsText(file);
+                }
+            });
+            return input;
+        }
+
+        function processFileContent(content) {
+            var lines = content.split('\n');
+            lines.forEach(function(line) {
+                var parts = line.split('=');
+                if (parts.length === 2) {
+                    var key = parts[0].trim().toLowerCase();
+                    var value = parts[1].trim();
+                    if (key === 'username') {
+                        username = value;
+                    } else if (key === 'gist id') {
+                        gistId = value;
+                    } else if (key === 'token') {
+                        accessToken = value;
+                    }
+                }
+            });
+
+            console.log('Username:', username);
+            console.log('Gist ID:', gistId);
+            console.log('Access Token:', accessToken);
+
+            sessionStorage.setItem('githubUsername', username);
+            sessionStorage.setItem('githubGistId', gistId);
+            sessionStorage.setItem('githubAccessToken', accessToken);
+
+            setupVideoPlayback();
+        }
+
+        function setupVideoPlayback() {
+            // Use the provided values for GitHub username, Gist ID, and token
+            var gistScript = document.createElement('script');
+            gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
+            document.head.appendChild(gistScript);
+
+            // Function to handle the network error
+            function handleNetworkError() {
+                console.log('A network error has occurred. Refreshing video...')
+
+                // Now load the video after saving the progress
+                video.load();
+
+                // Retrieve progress data from Gist and set currentTime
+                fetch(`https://api.github.com/gists/${gistId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.files[gistFilename]) {
+                            var progressData = JSON.parse(data.files[gistFilename].content);
+                            if (progressData.progress) {
+                                video.currentTime = parseFloat(progressData.progress);
+                            }
+                        }
+                    });
+            }
+
+            // Add an error event listener to the video element
+            video.addEventListener('error', function () {
+                if (video.error && video.error.code === 2) {
+                    // Save the progress to the Gist when a network error occurs
+                    var progressData = {
+                        "progress": video.currentTime,
+                        "url": window.location.href // Add the URL here
+                    };
+                    var gistData = {
+                        "files": {
+                            [gistFilename]: {
+                                "content": JSON.stringify(progressData, null, 2)
+                            }
+                        }
+                    };
+                    fetch(`https://api.github.com/gists/${gistId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': 'token ' + `${accessToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(gistData)
+                    })
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log('Progress saved to Gist:', data);
+
+                            // Introduce a 3-second timeout before calling handleNetworkError() and playing the video
+                            setTimeout(function () {
+                                handleNetworkError();
+                                video.play();
+                            }, 3000);
+                        });
+                }
+            });
+
+            // Handle saving and loading video playback progress
+            video.addEventListener('timeupdate', function () {
+                // Check if the video is paused
+                if (video.paused && !isVideoPaused) {
+                    isVideoPaused = true;
+                    // Save the progress to the Gist when paused
+                    var progressData = {
+                        "progress": video.currentTime,
+                        "url": window.location.href // Add the URL here
+                    };
+                    var gistData = {
+                        "files": {
+                            [gistFilename]: {
+                                "content": JSON.stringify(progressData, null, 2)
+                            }
+                        }
+                    };
+                    fetch(`https://api.github.com/gists/${gistId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': 'token ' + `${accessToken}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(gistData)
+                    })
+                        .then(response => response.json())
+                        .then(data => console.log('Progress saved to Gist:', data));
+                }
+            });
+
+            video.addEventListener('play', function () {
+                // Video resumed playing, mark it as not paused
+                isVideoPaused = false;
+            });
+
+            // Retrieve progress data from the Gist when the page loads
+            fetch(`https://api.github.com/gists/${gistId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.files[gistFilename]) {
+                        var progressData = JSON.parse(data.files[gistFilename].content);
+                        if (progressData.progress) {
+                            video.currentTime = parseFloat(progressData.progress);
+                        }
+                    }
+                });
+
+            // Clear user credentials from sessionStorage when the tab is closed
+            window.addEventListener('beforeunload', function () {
+                sessionStorage.removeItem('githubUsername');
+                sessionStorage.removeItem('githubGistId');
+                sessionStorage.removeItem('githubAccessToken');
+            });
+        }
+    });
+</script>
+
+
+
+<script src="/Series/Playback.js"></script>
+<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        videojs('my-video', {
+            plugins: {
+                hotkeys: {
+                    volumeStep: 0.1,
+                    seekStep: 5,
+                    enableModifiersForNumbers: false,
+                    alwaysCaptureHotkeys: true
+                },
+            },
+        });
+    });
+</script>
+<br>
+<br>
+<a onclick="clearGistProgress()">Click me! if you have watched the episode finished</a>
+
+</body>
+<body>
+  <br>
+    <br>
+    <a onclick="clearGistProgress()" href="/Series/The%20Umbrella%20Academy/S01/2.html">Next Episode</a>
+</body>
+</html>
