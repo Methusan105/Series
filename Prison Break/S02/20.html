@@ -31,6 +31,7 @@
 </div>
 <script>
     // Initialize Plyr
+    var video = document.getElementById('my-video');
     const player = new Plyr('#my-video');
 
     let spacePressed = false;
@@ -157,7 +158,7 @@
 
         function handleNetworkError() {
           console.log('A network error has occurred. Refreshing video...')
-          player.restart();
+          video.load();
 
           fetch(`https://api.github.com/gists/${gistId}`)
             .then(response => response.json())
