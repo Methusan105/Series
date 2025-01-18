@@ -246,11 +246,12 @@ document.addEventListener('DOMContentLoaded', function () {
         .catch(error => console.error('Error saving progress:', error));
     }
 
-    video.addEventListener('ended', function() {
+    player.on('ended', function() {
         player.src("https://github.com/Methusan105/Series/releases/download/TBBT1/The.Big.Bang.Theory.S01E01-1.mp4");
         player.load();
         player.play();
     });
+
 
     window.addEventListener('beforeunload', function () {
         sessionStorage.removeItem('githubUsername');
