@@ -1,0 +1,1 @@
+"C:\Program Files (x86)\FFmpegGUI\ffmpeg.exe" -i "C:\Users\Methu\Downloads\Video\Karnan.mp4" -c copy -f segment -segment_time 1500 -reset_timestamps 1 -map 0 -segment_format mp4 "C:\Users\Methu\Downloads\Karnan-%01d.mp4"
