@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+</head>
+<body>
+  <!-- URL input UI -->
+  <div style="margin-bottom:10px;">
+    <input id="videoUrlInput" type="text" placeholder="Paste video URL here" style="width:400px;">
+    <button id="loadVideoBtn">Load video</button>
+  </div>
+
+  <video
+    id="my-video"
+    class="video-js"
+    controls
+    preload="auto"
+    width="640"
+    height="264"
+    poster="MY_VIDEO_POSTER.jpg"
+    data-setup='{ "customControlsOnMobile": true, "nativeControlsForTouch": false }'
+  >
+    <!-- Optional: start empty, or keep a default video -->
+    <!-- <source src="https://example.com/default.mp4" type="video/mp4" /> -->
+    <p class="vjs-no-js">
+      To view this video please enable JavaScript, and consider upgrading to a
+      web browser that
+      <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+    </p>
+  </video>
+
+<script>
+var video = document.getElementById('my-video');
+var player = videojs("my-video");
+var spacePressed = false;
+var pageLoadTime = new Date().getTime();
+var saveInterval = 120000; // 2 minutes in milliseconds
+
+document.addEventListener('DOMContentLoaded', function () {
+    // --- NEW: load custom URL ---
+    var urlInput = document.getElementById('videoUrlInput');
+    var loadBtn = document.getElementById('loadVideoBtn');
+
+    loadBtn.addEventListener('click', function () {
+        var url = urlInput.value.trim();
+        if (!url) return;
+
+        // Set new source for Video.js
+        player.src({
+            src: url,
+            type: 'video/mp4' // change if you use HLS/DASH
+        });
+
+        // Reset progress tracking to this new video if needed
+        video.currentTime = 0;
+        player.play();
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === " ") {
+            event.preventDefault();
+            togglePause();
+        }
+        if (event.key === "f") {
+            fullscr();
+        }
+        if (event.key === "ArrowLeft") {
+            seekBackward();
+        }
+        if (event.key === "ArrowRight") {
+            seekForward();
+        }
+    });
+
+    function togglePause() {
+        if (player.paused()) {
+            player.play();
+        } else {
+            player.pause();
+        }
+    }
+
+    function fullscr() {
+        if (player.isFullscreen()) {
+            player.exitFullscreen();
+        } else {
+            player.requestFullscreen();
+        }
+    }
+
+    function seekForward() {
+        player.currentTime(player.currentTime() + 5);
+    }
+
+    function seekBackward() {
+        player.currentTime(player.currentTime() - 5);
+    }
+
+    // ... keep your existing GitHub Gist progress code here unchanged ...
+});
+</script>
+
+<script src="/Series/Playback.js"></script>
+<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        videojs('my-video', {
+            plugins: {
+                hotkeys: {
+                    volumeStep: 0.1,
+                    seekStep: 5,
+                    enableModifiersForNumbers: false,
+                    alwaysCaptureHotkeys: true
+                },
+            },
+        });
+    });
+</script>
+
+<br><br>
+<a onclick="clearGistProgress()">Click me! if you have watched the episode finished</a>
+
+<br><br>
+<a onclick="clearGistProgress()" href="/Series/My%20Hero%20Academia/S01/2.html">Next Episode</a>
+</body>
+</html>
