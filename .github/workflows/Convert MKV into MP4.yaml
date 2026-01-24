@@ -16,120 +16,86 @@ jobs:
       contents: write
 
     steps:
-      # 1) Aggressive manual disk cleanup (replaces failing action)
-      - name: Free disk space
+      - name: Aggressive disk cleanup
         run: |
-          # Remove swap file
+          # Show space before
+          echo "=== Disk space BEFORE cleanup ==="
+          df -h /
+          
+          # Disable and remove swap (frees ~4GB)
           sudo swapoff /mnt/swapfile || true
           sudo rm -f /mnt/swapfile || true
           
-          # Clean apt cache and lists
+          # Clean APT completely
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
+          sudo rm -rf /var/cache/apt/archives/*
           
-          # Remove Docker and other large packages
-          sudo docker system prune -a -f || true
-          sudo rm -rf /usr/local/share/docker || true
+          # Docker cleanup
+          sudo docker system prune -a -f --volumes || true
+          sudo rm -rf /var/lib/docker || true
           
-          # Remove common large SDKs
+          # Remove massive SDKs (~10-15GB)
           sudo rm -rf /usr/share/dotnet*
-          sudo rm -rf /opt/android-sdk* /opt/android-emulator*
+          sudo rm -rf /usr/share/swift*
+          sudo rm -rf /usr/local/lib/android*
           sudo rm -rf /usr/lib/jvm/*
-          sudo rm -rf /usr/local/haskell* /home/runner/.ghcup
+          sudo rm -rf /opt/ghc* /usr/local/haskell*
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           
-          # Clean npm/yarn caches
-          rm -rf ~/.npm ~/.yarn
+          # Caches
+          rm -rf ~/.npm ~/.yarn ~/.cache/pip ~/.cache/*
           
-          # Clean GitHub runner caches
-          rm -rf ~/.cache/*
-          
-          echo "Disk space after cleanup:"
-          df -h
+          echo "=== Disk space AFTER cleanup ==="
+          df -h /
 
-      - name: Install dependencies
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all assets from chosen release
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ inputs.release_tag }}
+          fileName: '*'
+          latest: false
+
+      - name: Install ffmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg jq curl
+          sudo apt-get install -y ffmpeg
 
-      # 2) Get release info and assets for the chosen tag
-      - name: Fetch release info
-        id: release
+      - name: Convert MKV to MP4 (stream copy)
+        run: |
+          shopt -s nullglob
+          for f in *.mkv; do
+            out="${f%.mkv}.mp4"
+            ffmpeg -y -i "$f" -map 0:v -map 0:a -c copy "$out"
+          done
+
+      - name: Upload MP4 files to this release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           api="https://api.github.com"
           repo="${GITHUB_REPOSITORY}"
-          tag="${{ inputs.release_tag }}"
 
-          json=$(curl -sSL \
+          # Get release upload_url for the selected tag
+          upload_url=$(curl -sSL \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "$api/repos/$repo/releases/tags/$tag")
+            "$api/repos/$repo/releases/tags/$RELEASE_TAG" \
+            | jq -r '.upload_url')
 
-          echo "$json" > release.json
+          upload_url="${upload_url%%\{*}"
 
-          upload_url=$(jq -r '.upload_url' release.json | sed 's/{.*//')
-          assets_urls=$(jq -r '.assets[]? | select(.name | endswith(".mkv")) | .browser_download_url' release.json)
-
-          echo "upload_url=${upload_url}" >> "$GITHUB_OUTPUT"
-          printf "%s\n" $assets_urls > mkv_assets.txt
-
-          echo "Found MKV files:"
-          cat mkv_assets.txt
-
-      # 3) Process each MKV one by one (minimal disk usage)
-      - name: Convert and upload MKVs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPLOAD_URL: ${{ steps.release.outputs.upload_url }}
-        run: |
-          set -euo pipefail
-
-          if [ ! -f mkv_assets.txt ]; then
-            echo "No MKV files found in release"
-            exit 0
-          fi
-
-          total_files=$(wc -l < mkv_assets.txt)
-          current=0
-
-          while read -r url; do
-            [ -z "$url" ] && continue
-            
-            current=$((current + 1))
-            file=$(basename "$url")
-            echo "=== Processing $current/$total_files: $file ==="
-
-            # Download
-            echo "Downloading $file..."
-            curl -L -o "$file" "$url"
-
-            # Convert (video + audio only, exclude PGS subtitles)
-            mp4="${file%.mkv}.mp4"
-            echo "Converting $file -> $mp4..."
-            ffmpeg -y -i "$file" -map 0:v -map 0:a -c copy "$mp4" -loglevel error
-
-            # Upload immediately
-            echo "Uploading $mp4..."
+          shopt -s nullglob
+          for f in *.mp4; do
+            echo "Uploading $f to $upload_url"
             curl \
               -X POST \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Content-Type: video/mp4" \
-              --data-binary @"$mp4" \
-              "$UPLOAD_URL?name=$(basename "$mp4")"
-
-            # Clean up immediately to save space
-            echo "Cleaning up $file and $mp4"
-            rm -f "$file" "$mp4"
-
-            echo "Disk usage after processing:"
-            df -h .
-          done < mkv_assets.txt
-
-          echo "All files processed successfully!"
-
-      # 4) Final cleanup
-      - name: Final cleanup
-        if: always()
-        run: |
-          rm -f release.json mkv_assets.txt || true
-          df -h
+              --data-binary @"$f" \
+              "$upload_url?name=$(basename "$f")"
+          done
