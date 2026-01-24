@@ -11,8 +11,7 @@ on:
         description: "Batch offset (0 for first 8, 8 for next 8, etc.)"
         required: false
         default: "0"
-        type: choice:
-          options: ["0","8","16","24","32","40","48","56"]
+        type: string
 
 jobs:
   mkv-to-mp4:
