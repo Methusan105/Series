@@ -61,18 +61,30 @@ jobs:
           tag="${{ inputs.release_tag }}"
           offset="${{ inputs.batch_offset }}"
           
-          # Get all assets as array
-          assets=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" \
-            | jq -r '.assets[]? | .browser_download_url' | jq -s .)
+          echo "Fetching release for tag: $tag"
+          
+          # Get raw release JSON first (debug + validation)
+          release_json=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag")
+          
+          echo "$release_json" | jq -e '.id' > /dev/null || {
+            echo "❌ Error: Invalid release JSON or tag '$tag' not found"
+            echo "$release_json" | jq . || cat -
+            exit 1
+          }
+          
+          # Extract assets array safely as JSON array of URLs
+          assets=$(echo "$release_json" | jq -Rsc '(.assets[]? | .browser_download_url) // empty')
           
           total=$(echo "$assets" | jq length)
           echo "Total assets: $total"
           
           # Get batch of 8 files (offset to offset+7)
-          batch_assets=$(echo "$assets" | jq -r ".[$offset:$((offset+8))] // empty | .[]" )
+          batch_assets=$(echo "$assets" | jq -r ".[$offset:$((offset + 8))] | .[]" | jq -s .)
           
-          echo "$batch_assets" > batch_files.txt
+          echo "$batch_assets" | tee batch_files.txt
+          
           echo "batch_files<<EOF" >> $GITHUB_OUTPUT
           echo "$batch_assets" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -82,7 +94,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         run: |
-          offset="${{ inputs.batch_offset }}"
           while read -r url; do
             [ -z "$url" ] && continue
             file=$(basename "$url")
