@@ -1,0 +1,68 @@
+name: Convert MKV assets to MP4
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag of the release to process (e.g. v1.2.3)"
+        required: true
+        type: string
+
+jobs:
+  mkv-to-mp4:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all assets from chosen release
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ inputs.release_tag }}
+          fileName: '*'
+          latest: false
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Convert MKV to MP4 (stream copy)
+        run: |
+          shopt -s nullglob
+          for f in *.mkv; do
+            out="${f%.mkv}.mp4"
+            ffmpeg -y -i "$f" -c copy -map 0 "$out"
+          done
+
+      - name: Upload MP4 files to this release
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          api="https://api.github.com"
+          repo="${GITHUB_REPOSITORY}"
+
+          # Get release upload_url for the selected tag
+          upload_url=$(curl -sSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "$api/repos/$repo/releases/tags/$RELEASE_TAG" \
+            | jq -r '.upload_url')
+
+          upload_url="${upload_url%%\{*}"
+
+          shopt -s nullglob
+          for f in *.mp4; do
+            echo "Uploading $f to $upload_url"
+            curl \
+              -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Content-Type: video/mp4" \
+              --data-binary @"$f" \
+              "$upload_url?name=$(basename "$f")"
+          done
