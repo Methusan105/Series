@@ -7,11 +7,6 @@ on:
         description: "Tag of the release to process (e.g. v1.2.3)"
         required: true
         type: string
-      batch_offset:
-        description: "Batch offset (0 for first 8, 8 for next 8, etc.)"
-        required: false
-        default: "0"
-        type: string
 
 jobs:
   mkv-to-mp4:
@@ -19,7 +14,6 @@ jobs:
 
     permissions:
       contents: write
-      actions: write
 
     steps:
       - name: Aggressive disk cleanup
@@ -27,19 +21,24 @@ jobs:
           echo "=== Disk space BEFORE cleanup ==="
           df -h /
           
+          # Disable and remove swap (~4GB)
           sudo swapoff /mnt/swapfile || true
           sudo rm -f /mnt/swapfile || true
           
+          # Clean APT
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
           
+          # Docker cleanup
           sudo docker system prune -a -f --volumes || true
           sudo rm -rf /var/lib/docker || true
           
+          # Remove SDKs (~10-15GB)
           sudo rm -rf /usr/share/dotnet* /usr/share/swift*
           sudo rm -rf /usr/local/lib/android* /usr/lib/jvm/*
           sudo rm -rf /opt/ghc* /usr/local/haskell* "$AGENT_TOOLSDIRECTORY"
           
+          # Caches
           rm -rf ~/.npm ~/.yarn ~/.cache/pip ~/.cache/*
           
           echo "=== Disk space AFTER cleanup ==="
@@ -51,134 +50,30 @@ jobs:
       - name: Install ffmpeg + GitHub CLI
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg gh jq
+          sudo apt-get install -y ffmpeg gh
 
-      - name: Get release assets list
-        id: assets
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-        run: |
-          tag="${{ inputs.release_tag }}"
-          offset="${{ inputs.batch_offset }}"
-          
-          echo "Fetching release for tag: $tag"
-          
-          # Get raw release JSON first (debug + validation)
-          release_json=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag")
-          
-          echo "=== RAW API RESPONSE ==="
-          echo "$release_json" | jq .
-          echo "========================"
-          
-          # Check if we got an error response
-          if echo "$release_json" | jq -e '.message // empty' > /dev/null; then
-            echo "❌ API Error: $(echo "$release_json" | jq -r '.message')"
-            exit 1
-          fi
-          
-          # Check if release has assets array
-          if ! echo "$release_json" | jq -e '.assets' > /dev/null; then
-            echo "❌ Release exists but has no assets array"
-            echo "Available fields: $(echo "$release_json" | jq 'keys | join(", ")')"
-            exit 1
-          fi
-          
-          # Extract URLs safely as JSON array
-          assets=$(echo "$release_json" | jq -Rsc '(.assets[]? | .browser_download_url // empty) | select(length > 0)')
-          
-          total=$(echo "$assets" | jq length)
-          echo "Total assets: $total"
-          
-          if [ "$total" -eq 0 ]; then
-            echo "No assets found for this release"
-            echo "batch_files<<EOF" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            echo "total_assets=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # Get batch of 8 files (offset to offset+7)
-          batch_assets=$(echo "$assets" | jq -r ".[$offset:$((offset + 8))] // empty")
-          
-          echo "Batch URLs:"
-          echo "$batch_assets"
-          echo "$batch_assets" | tee batch_files.txt
-          
-          echo "batch_files<<EOF" >> $GITHUB_OUTPUT
-          echo "$batch_assets" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "total_assets=$total" >> $GITHUB_OUTPUT
-
-      - name: Download batch of 8 assets
-        if: steps.assets.outputs.total_assets != '0'
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-        run: |
-          while IFS= read -r url; do
-            [ -z "$url" ] && continue
-            file=$(basename "$url")
-            echo "Downloading $file"
-            curl -L -f -o "$file" "$url" || echo "Failed to download $url"
-          done < batch_files.txt
+      - name: Download all assets from chosen release
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ inputs.release_tag }}
+          fileName: '*'
+          latest: false
 
       - name: Convert MKV to MP4 (stream copy)
-        if: steps.assets.outputs.total_assets != '0'
         run: |
           shopt -s nullglob
-          mkv_count=0
           for f in *.mkv; do
-            mkv_count=$((mkv_count + 1))
             out="${f%.mkv}.mp4"
-            echo "Converting $f -> $out"
-            if ffmpeg -y -i "$f" -map 0:v -map 0:a -c copy "$out" -loglevel error; then
-              echo "✅ Converted $f"
-            else
-              echo "❌ Failed to convert $f"
-            fi
+            ffmpeg -y -i "$f" -map 0:v -map 0:a -c copy "$out"
           done
-          echo "Processed $mkv_count MKV files"
 
       - name: Upload MP4 files to this release
-        if: steps.assets.outputs.total_assets != '0'
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
         run: |
           shopt -s nullglob
-          mp4_count=0
           for f in *.mp4; do
-            mp4_count=$((mp4_count + 1))
             echo "Uploading $f"
-            if gh release upload "${{ inputs.release_tag }}" "$f" --clobber; then
-              echo "✅ Uploaded $f"
-            else
-              echo "❌ Failed to upload $f"
-            fi
+            gh release upload "${{ inputs.release_tag }}" "$f" --clobber
           done
-          echo "Uploaded $mp4_count MP4 files"
-
-      - name: Trigger next batch if needed
-        if: steps.assets.outputs.total_assets != '' && steps.assets.outputs.total_assets != '0'
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-        run: |
-          offset="${{ inputs.batch_offset }}"
-          total="${{ steps.assets.outputs.total_assets }}"
-          next_offset=$((offset + 8))
-          
-          if [ "$next_offset" -lt "$total" ]; then
-            echo "Triggering next batch ($next_offset of $total)..."
-            gh workflow run "Convert MKV assets to MP4" \
-              --repo "${{ github.repository }}" \
-              -f release_tag="${{ inputs.release_tag }}" \
-              -f batch_offset="$next_offset"
-          else
-            echo "✅ All batches completed!"
-          fi
-
-      - name: Cleanup
-        if: always()
-        run: |
-          rm -f *.mkv *.mp4 batch_files.txt || true
-          echo "Cleanup completed"
