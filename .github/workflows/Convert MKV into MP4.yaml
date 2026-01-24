@@ -16,54 +16,92 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download all assets from chosen release
-        uses: robinraju/release-downloader@v1
+      # 1) Free disk space early
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
         with:
-          repository: ${{ github.repository }}
-          tag: ${{ inputs.release_tag }}
-          fileName: '*'
-          latest: false
+          root-reserve-mb: 1024
+          temp-reserve-mb: 1024
+          swap-size-mb: 0
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
 
-      - name: Install ffmpeg
+      - name: Show free space
+        run: df -h
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg jq
 
-      - name: Convert MKV to MP4 (stream copy)
-        run: |
-          shopt -s nullglob
-          for f in *.mkv; do
-            out="${f%.mkv}.mp4"
-            ffmpeg -y -i "$f" -map 0:v -map 0:a -c copy "$out"
-          done
-
-
-      - name: Upload MP4 files to this release
+      # 2) Get release info and assets for the chosen tag
+      - name: Fetch release info
+        id: release
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           api="https://api.github.com"
           repo="${GITHUB_REPOSITORY}"
+          tag="${{ inputs.release_tag }}"
 
-          # Get release upload_url for the selected tag
-          upload_url=$(curl -sSL \
+          json=$(curl -sSL \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
-            "$api/repos/$repo/releases/tags/$RELEASE_TAG" \
-            | jq -r '.upload_url')
+            "$api/repos/$repo/releases/tags/$tag")
 
-          upload_url="${upload_url%%\{*}"
+          echo "$json" > release.json
 
+          upload_url=$(jq -r '.upload_url' release.json)
+          assets_urls=$(jq -r '.assets[].browser_download_url' release.json)
+
+          echo "upload_url=${upload_url%%\{*}" >> "$GITHUB_OUTPUT"
+          printf "%s\n" $assets_urls > assets.txt
+
+      # 3) Process assets one by one to keep disk usage low
+      - name: Download, convert and upload each MKV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPLOAD_URL: ${{ steps.release.outputs.upload_url }}
+        run: |
+          set -euo pipefail
           shopt -s nullglob
-          for f in *.mp4; do
-            echo "Uploading $f to $upload_url"
-            curl \
-              -X POST \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Content-Type: video/mp4" \
-              --data-binary @"$f" \
-              "$upload_url?name=$(basename "$f")"
-          done
+
+          while read -r url; do
+            [ -z "$url" ] && continue
+
+            file=$(basename "$url")
+            echo "Downloading asset: $file"
+            curl -L "$url" -o "$file"
+
+            if [[ "$file" == *.mkv ]]; then
+              mp4="${file%.mkv}.mp4"
+              echo "Converting $file -> $mp4"
+
+              # Copy only video + audio streams, exclude PGS subtitles (not supported in MP4)
+              ffmpeg -y -i "$file" -map 0:v -map 0:a -c copy "$mp4"
+
+              echo "Uploading $mp4"
+              curl \
+                -X POST \
+                -H "Authorization: Bearer $GITHUB_TOKEN" \
+                -H "Content-Type: video/mp4" \
+                --data-binary @"$mp4" \
+                "$UPLOAD_URL?name=$(basename "$mp4")"
+
+              echo "Deleting local MKV and MP4 to free space"
+              rm -f "$file" "$mp4"
+            else
+              echo "Skipping non-MKV asset: $file"
+              rm -f "$file"
+            fi
+
+            echo "Disk usage after processing $file:"
+            df -h
+          done < assets.txt
+
+      # Optional: extra cleanup
+      - name: Final cleanup
+        run: |
+          rm -f release.json assets.txt || true
+          df -h
