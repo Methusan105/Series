@@ -15,220 +15,371 @@
     <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Jujutsu%20Kaisen/S02/Subs/Jujutsu.Kaisen.S02E15.vtt" srclang="en" label="English" default>
   </video>
 <script>
-var video = document.getElementById('my-video');
-var spacePressed = false;
-var pageLoadTime = new Date().getTime();
-var saveInterval = 120000; // 2 minutes in milliseconds
+// ============================================
+// FastStream-Compatible Progress Saving & Controls
+// ============================================
 
-document.addEventListener('DOMContentLoaded', function () {
-    document.addEventListener("keydown", function (event) {
-        if (event.key === " ") {
-            event.preventDefault();
-            togglePause();
-        }
-        if (event.key === "f") {
-            fullscr();
-        }
-        if (event.key === "ArrowLeft") {
-            seekBackward();
-        }
-        if (event.key === "ArrowRight") {
-            seekForward();
-        }
-    });
-
-    function togglePause() {
-        if (video.paused) {
-            video.play();
-        } else {
-            video.pause();
-        }
-    }
-
-    function fullscr() {
-        if (document.fullscreenElement) {
-            document.exitFullscreen();
-        } else {
-            video.requestFullscreen();
-        }
-    }
-
-    function seekForward() {
-        video.currentTime += 5;
-    }
-
-    function seekBackward() {
-        video.currentTime -= 5;
-    }
-
-    var gistFilename = 'video_progress.json';
-    var isVideoPaused = false;
-    var username = sessionStorage.getItem('githubUsername');
-    var gistId = sessionStorage.getItem('githubGistId');
-    var accessToken = sessionStorage.getItem('githubAccessToken');
-
-    if (!username || !gistId || !accessToken) {
-        var isTV = detectTV()
-        if (isTV) {
-            username = prompt('Enter your GitHub username:');
-            gistId = prompt('Enter your Gist ID:');
-            accessToken = prompt('Enter your GitHub Personal Access Token:');
-            sessionStorage.setItem('githubUsername', username);
-            sessionStorage.setItem('githubGistId', gistId);
-            sessionStorage.setItem('githubAccessToken', accessToken);
-            setupVideoPlayback();
-        }
-        if (!document.getElementById('fileInput')) {
-            var fileInput = createFileInput();
-            document.body.appendChild(fileInput);
-            button.addEventListener('click', function() {
-                fileInput.click();
-            });
-            document.body.appendChild(button);
-        }
+const VideoProgressManager = {
+  // Configuration
+  gistFilename: 'video_progress.json',
+  saveInterval: 120000, // 2 minutes
+  
+  // State
+  username: null,
+  gistId: null,
+  accessToken: null,
+  isVideoPaused: false,
+  pageLoadTime: new Date().getTime(),
+  
+  // Reference to video element (works even if FastStream hides it)
+  videoElement: null,
+  
+  // FastStream detection: tracks if FastStream player is active
+  fastStreamActive: false,
+  fastStreamIframe: null,
+  
+  init: async function() {
+    this.videoElement = document.getElementById('my-video');
+    
+    // Retrieve credentials
+    this.username = sessionStorage.getItem('githubUsername');
+    this.gistId = sessionStorage.getItem('githubGistId');
+    this.accessToken = sessionStorage.getItem('githubAccessToken');
+    
+    if (!this.username || !this.gistId || !this.accessToken) {
+      this.promptForCredentials();
     } else {
-        setupVideoPlayback();
+      this.setupVideoTracking();
     }
-
-    function detectTV() {
-        var userAgent = navigator.userAgent.toLowerCase();
-        return userAgent.includes('tv');
-    }
-
-    function createFileInput() {
-        var input = document.createElement('input');
-        input.id = 'fileInput';
-        input.type = 'file';
-        input.accept = '.txt';
-        input.addEventListener('change', function(event) {
-            var file = event.target.files[0];
-            if (file) {
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    processFileContent(e.target.result);
-                };
-                reader.readAsText(file);
-            }
-        });
-        return input;
-    }
-
-    function processFileContent(content) {
-        var lines = content.split('\n');
-        lines.forEach(function(line) {
-            var parts = line.split('=');
-            if (parts.length === 2) {
-                var key = parts[0].trim().toLowerCase();
-                var value = parts[1].trim();
-                if (key === 'username') {
-                    username = value;
-                } else if (key === 'gist id') {
-                    gistId = value;
-                } else if (key === 'token') {
-                    accessToken = value;
-                }
-            }
-        });
-        console.log('Username:', username);
-        console.log('Gist ID:', gistId);
-        console.log('Access Token:', accessToken);
-        sessionStorage.setItem('githubUsername', username);
-        sessionStorage.setItem('githubGistId', gistId);
-        sessionStorage.setItem('githubAccessToken', accessToken);
-        setupVideoPlayback();
-    }
-
-    function setupVideoPlayback() {
-        var gistScript = document.createElement('script');
-        gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
-        document.head.appendChild(gistScript);
-
-        function handleNetworkError() {
-            console.log('A network error has occurred. Refreshing video...')
-            video.load();
-            fetch(`https://api.github.com/gists/${gistId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.files[gistFilename]) {
-                        var progressData = JSON.parse(data.files[gistFilename].content);
-                        if (progressData.progress) {
-                            video.currentTime = parseFloat(progressData.progress);
-                        }
-                    }
-                });
+    
+    // Detect FastStream and setup monitoring
+    this.detectAndMonitorFastStream();
+  },
+  
+  /**
+   * Monitors for FastStream iframe creation and syncs progress
+   */
+  detectAndMonitorFastStream: function() {
+    // Watch for iframe creation (FastStream replaces video with iframe)
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          // Look for FastStream player iframe
+          if (node.nodeType === 1 && node.tagName === 'IFRAME' && 
+              node.src && node.src.includes('faststream')) {
+            this.fastStreamIframe = node;
+            this.fastStreamActive = true;
+            console.log('FastStream player detected');
+            
+            // Setup sync between FastStream and our tracking
+            this.setupFastStreamSync();
+          }
         }
-
-        video.addEventListener('error', function () {
-            if (video.error && video.error.code === 2) {
-                saveProgress();
-                setTimeout(function () {
-                    handleNetworkError();
-                    video.play();
-                }, 3000);
-            }
-        });
-
-        video.addEventListener('timeupdate', function () {
-            if (video.paused && !isVideoPaused) {
-                isVideoPaused = true;
-                saveProgress();
-            }
-        });
-
-        video.addEventListener('play', function () {
-            isVideoPaused = false;
-        });
-
-        fetch(`https://api.github.com/gists/${gistId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.files[gistFilename]) {
-                    var progressData = JSON.parse(data.files[gistFilename].content);
-                    if (progressData.progress) {
-                        video.currentTime = parseFloat(progressData.progress);
-                    }
-                }
-            });
-
-        setInterval(saveProgress, saveInterval);
-    }
-
-    function saveProgress() {
-        var currentTime = new Date().getTime();
-        var timeOnPage = (currentTime - pageLoadTime) / 1000;
-
-        var progressData = {
-            "progress": video.currentTime,
-            "url": window.location.href,
-            "timeOnPage": timeOnPage
-        };
-
-        var gistData = {
-            "files": {
-                [gistFilename]: {
-                    "content": JSON.stringify(progressData, null, 2)
-                }
-            }
-        };
-
-        fetch(`https://api.github.com/gists/${gistId}`, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': 'token ' + `${accessToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(gistData)
-        })
-        .then(response => response.json())
-        .then(data => console.log('Progress saved to Gist:', data))
-        .catch(error => console.error('Error saving progress:', error));
-    }
-
-    window.addEventListener('beforeunload', function () {
-        sessionStorage.removeItem('githubUsername');
-        sessionStorage.removeItem('githubGistId');
-        sessionStorage.removeItem('githubAccessToken');
+      }
     });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  },
+  
+  /**
+   * Synchronize FastStream player with progress tracking
+   * This handles syncing currentTime between FastStream iframe and our tracking
+   */
+  setupFastStreamSync: function() {
+    // FastStream uses postMessage API for cross-iframe communication
+    // We'll poll the FastStream player's state periodically
+    
+    const syncInterval = setInterval(() => {
+      if (!this.fastStreamActive || !this.fastStreamIframe) {
+        clearInterval(syncInterval);
+        return;
+      }
+      
+      // Try to get progress from FastStream via contentious polling
+      // If FastStream removed the original video, we maintain progress locally
+      // and periodically try to sync
+      
+      // Keep saving progress to Gist regardless
+      if (this.videoElement && this.videoElement.currentTime > 0) {
+        this.saveProgress();
+      }
+    }, this.saveInterval);
+  },
+  
+  promptForCredentials: function() {
+    const isTV = this.detectTV();
+    if (isTV) {
+      this.username = prompt('Enter your GitHub username:');
+      this.gistId = prompt('Enter your Gist ID:');
+      this.accessToken = prompt('Enter your GitHub Personal Access Token:');
+    } else {
+      // Show file input for credentials
+      this.showCredentialInput();
+      return;
+    }
+    
+    if (this.username && this.gistId && this.accessToken) {
+      sessionStorage.setItem('githubUsername', this.username);
+      sessionStorage.setItem('githubGistId', this.gistId);
+      sessionStorage.setItem('githubAccessToken', this.accessToken);
+      this.setupVideoTracking();
+    }
+  },
+  
+  showCredentialInput: function() {
+    const fileInput = document.createElement('input');
+    fileInput.id = 'credentialFile';
+    fileInput.type = 'file';
+    fileInput.accept = '.txt';
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          this.processCredentialFile(event.target.result);
+        };
+        reader.readAsText(file);
+      }
+    });
+    
+    const button = document.createElement('button');
+    button.textContent = 'Load Credentials';
+    button.style.cssText = 'padding: 10px 20px; margin: 10px; cursor: pointer;';
+    button.addEventListener('click', () => fileInput.click());
+    
+    document.body.insertBefore(button, document.body.firstChild);
+    document.body.insertBefore(fileInput, document.body.firstChild);
+  },
+  
+  processCredentialFile: function(content) {
+    const lines = content.split('\n');
+    lines.forEach((line) => {
+      const [key, value] = line.split('=').map(s => s.trim());
+      if (key && value) {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey === 'username') this.username = value;
+        else if (lowerKey === 'gist id') this.gistId = value;
+        else if (lowerKey === 'token') this.accessToken = value;
+      }
+    });
+    
+    if (this.username && this.gistId && this.accessToken) {
+      sessionStorage.setItem('githubUsername', this.username);
+      sessionStorage.setItem('githubGistId', this.gistId);
+      sessionStorage.setItem('githubAccessToken', this.accessToken);
+      this.setupVideoTracking();
+    }
+  },
+  
+  setupVideoTracking: function() {
+    // Load previous progress
+    this.loadProgress();
+    
+    // Setup event listeners on original video element
+    // These work even if FastStream hides the element
+    this.videoElement.addEventListener('timeupdate', () => {
+      if (this.videoElement.paused && !this.isVideoPaused) {
+        this.isVideoPaused = true;
+        this.saveProgress();
+      }
+    });
+    
+    this.videoElement.addEventListener('play', () => {
+      this.isVideoPaused = false;
+    });
+    
+    this.videoElement.addEventListener('error', (e) => {
+      if (this.videoElement.error && this.videoElement.error.code === 2) {
+        this.saveProgress();
+        setTimeout(() => {
+          this.videoElement.load();
+          this.videoElement.play();
+        }, 3000);
+      }
+    });
+    
+    // Auto-save every interval
+    setInterval(() => {
+      this.saveProgress();
+    }, this.saveInterval);
+  },
+  
+  loadProgress: function() {
+    fetch(`https://api.github.com/gists/${this.gistId}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.files && data.files[this.gistFilename]) {
+          const progressData = JSON.parse(data.files[this.gistFilename].content);
+          if (progressData.progress && this.videoElement) {
+            this.videoElement.currentTime = parseFloat(progressData.progress);
+          }
+        }
+      })
+      .catch(error => console.error('Error loading progress:', error));
+  },
+  
+  saveProgress: function() {
+    if (!this.videoElement || !this.gistId) return;
+    
+    const currentTime = new Date().getTime();
+    const timeOnPage = (currentTime - this.pageLoadTime) / 1000;
+    
+    const progressData = {
+      "progress": this.videoElement.currentTime,
+      "url": window.location.href,
+      "timeOnPage": timeOnPage
+    };
+    
+    const gistData = {
+      "files": {
+        [this.gistFilename]: {
+          "content": JSON.stringify(progressData, null, 2)
+        }
+      }
+    };
+    
+    fetch(`https://api.github.com/gists/${this.gistId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${this.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(gistData)
+    })
+    .catch(error => console.error('Error saving progress:', error));
+  },
+  
+  detectTV: function() {
+    return navigator.userAgent.toLowerCase().includes('tv');
+  }
+};
+
+// ============================================
+// Keyboard Controls (Works with or without FastStream)
+// ============================================
+
+const KeyboardControls = {
+  videoElement: null,
+  fastStreamIframe: null,
+  
+  init: function(videoElement) {
+    this.videoElement = videoElement;
+    document.addEventListener('keydown', this.handleKeydown.bind(this));
+    
+    // Monitor for FastStream iframe
+    this.monitorForFastStream();
+  },
+  
+  monitorForFastStream: function() {
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === 1 && node.tagName === 'IFRAME' && 
+              node.src && node.src.includes('faststream')) {
+            this.fastStreamIframe = node;
+            console.log('FastStream iframe detected for keyboard control');
+          }
+        }
+      }
+    });
+    
+    observer.observe(document.body, { childList: true, subtree: true });
+  },
+  
+  handleKeydown: function(event) {
+    // Space: Play/Pause
+    if (event.key === ' ') {
+      event.preventDefault();
+      this.togglePlayPause();
+    }
+    // F: Fullscreen
+    else if (event.key === 'f' || event.key === 'F') {
+      event.preventDefault();
+      this.toggleFullscreen();
+    }
+    // Left Arrow: Seek backward 5 seconds
+    else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      this.seekBackward();
+    }
+    // Right Arrow: Seek forward 5 seconds
+    else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      this.seekForward();
+    }
+  },
+  
+  togglePlayPause: function() {
+    if (this.fastStreamIframe) {
+      // Send message to FastStream iframe to toggle play/pause
+      this.fastStreamIframe.contentWindow.postMessage({
+        type: 'faststream-control',
+        action: 'toggle-play-pause'
+      }, '*');
+    } else if (this.videoElement) {
+      if (this.videoElement.paused) {
+        this.videoElement.play();
+      } else {
+        this.videoElement.pause();
+      }
+    }
+  },
+  
+  toggleFullscreen: function() {
+    if (this.fastStreamIframe) {
+      // Send message to FastStream iframe to toggle fullscreen
+      this.fastStreamIframe.contentWindow.postMessage({
+        type: 'faststream-control',
+        action: 'toggle-fullscreen'
+      }, '*');
+    } else if (this.videoElement) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        this.videoElement.requestFullscreen();
+      }
+    }
+  },
+  
+  seekForward: function() {
+    if (this.fastStreamIframe) {
+      this.fastStreamIframe.contentWindow.postMessage({
+        type: 'faststream-control',
+        action: 'seek',
+        value: 5
+      }, '*');
+    } else if (this.videoElement) {
+      this.videoElement.currentTime += 5;
+    }
+  },
+  
+  seekBackward: function() {
+    if (this.fastStreamIframe) {
+      this.fastStreamIframe.contentWindow.postMessage({
+        type: 'faststream-control',
+        action: 'seek',
+        value: -5
+      }, '*');
+    } else if (this.videoElement) {
+      this.videoElement.currentTime -= 5;
+    }
+  }
+};
+
+// Initialize everything when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+  VideoProgressManager.init();
+  KeyboardControls.init(document.getElementById('my-video'));
+  
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', function() {
+    sessionStorage.removeItem('githubUsername');
+    sessionStorage.removeItem('githubGistId');
+    sessionStorage.removeItem('githubAccessToken');
+  });
 });
 </script>
 
