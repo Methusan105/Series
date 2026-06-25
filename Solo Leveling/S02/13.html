@@ -17,8 +17,8 @@
     poster="MY_VIDEO_POSTER.jpg"
     data-setup='{ "customControlsOnMobile": true, "nativeControlsForTouch": false }'
   >
-    <source src="https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E11-0.mp4" type="video/mp4" />
-    <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E11.vtt" srclang="en" label="English" default>
+    <source src="https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E13-0.mp4" type="video/mp4" />
+    <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E13.vtt" srclang="en" label="English" default>
     <p class="vjs-no-js"><p class="vjs-no-js">
       To view this video please enable JavaScript, and consider upgrading to a
       web browser that
@@ -32,7 +32,7 @@ var video = document.getElementById('my-video');
 var player = videojs("my-video");
 var spacePressed = false;
 var pageLoadTime = new Date().getTime();
-var saveInterval = 120000; // 2 minutes in milliseconds
+var saveInterval = 130000; // 2 minutes in milliseconds
 
 document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener("keydown", function (event) {
@@ -213,7 +213,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         player.on('ended', function () {
             player.src({
-                src: 'https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E11-1.mp4',
+                src: 'https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E13-1.mp4',
                 type: 'video/mp4'
             });
             player.load();
@@ -290,6 +290,6 @@ document.addEventListener('DOMContentLoaded', function () {
 <body>
   <br>
     <br>
-    <a onclick="clearGistProgress()" href="/Series/Solo%20Leveling/S02/12.html">Next Episode</a>
+    <a onclick="clearGistProgress()" href="/Series/Solo%20Leveling/Solo.html">Back to main menu</a>
 </body>
 </html>

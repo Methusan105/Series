@@ -17,7 +17,7 @@
     poster="MY_VIDEO_POSTER.jpg"
     data-setup='{ "customControlsOnMobile": true, "nativeControlsForTouch": false }'
   >
-    <source src="https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E10.mp4" type="video/mp4" />
+    <source src="https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E10-0.mp4" type="video/mp4" />
     <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E10.vtt" srclang="en" label="English" default>
     <p class="vjs-no-js"><p class="vjs-no-js">
       To view this video please enable JavaScript, and consider upgrading to a
@@ -198,11 +198,27 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(data => {
                 if (data.files[gistFilename]) {
                     var progressData = JSON.parse(data.files[gistFilename].content);
+                    if (progressData.source) {
+                        player.src({
+                            src: progressData.source,
+                            type: 'video/mp4'
+                        });
+                        player.load();
+                    }
                     if (progressData.progress) {
                         video.currentTime = parseFloat(progressData.progress);
                     }
                 }
             });
+
+        player.on('ended', function () {
+            player.src({
+                src: 'https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E10-1.mp4',
+                type: 'video/mp4'
+            });
+            player.load();
+            player.play();
+        });
 
         setInterval(saveProgress, saveInterval);
     }
@@ -213,6 +229,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         var progressData = {
             "progress": video.currentTime,
+            "source": (typeof player.currentSrc === 'function' ? player.currentSrc() : player.currentSrc) || video.currentSrc,
             "url": window.location.href,
             "timeOnPage": timeOnPage
         };
