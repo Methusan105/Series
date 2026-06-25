@@ -22,9 +22,6 @@ on:
           - small
           - medium
           - large
-  push:
-    branches:
-      - main
 
 jobs:
   transcribe:
