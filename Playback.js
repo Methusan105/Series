@@ -12,7 +12,7 @@ function clearGistProgress() {
   var gistData = {
     "files": {
       [gistFilename]: {
-        "content": JSON.stringify({}, null, 2)
+        "content": JSON.stringify(12, null, 2)
       }
     }
   };
@@ -90,12 +90,14 @@ function setupEpisodeAutoAdvance(player) {
           return;
         }
         if (nextEpisodeUrl && player.ended && player.ended()) {
+          clearGistProgress();
           window.location.href = nextEpisodeUrl;
         }
         return;
       }
 
       if (nextEpisodeUrl) {
+        clearGistProgress();
         window.location.href = nextEpisodeUrl;
       }
     }, 500);
@@ -105,6 +107,7 @@ function setupEpisodeAutoAdvance(player) {
 function goToNextEpisode() {
   var nextUrl = findNextEpisodeUrl();
   if (nextUrl) {
+    clearGistProgress();
     window.location.href = nextUrl;
   }
 }
