@@ -18,7 +18,7 @@
     data-setup='{ "customControlsOnMobile": true, "nativeControlsForTouch": false }'
   >
     <source src="https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E11-0.mp4" type="video/mp4" />
-    <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E11.vtt" srclang="en" label="English" default>
+    <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E11-0.vtt" srclang="en" label="English" default>
     <p class="vjs-no-js"><p class="vjs-no-js">
       To view this video please enable JavaScript, and consider upgrading to a
       web browser that
@@ -203,6 +203,23 @@ document.addEventListener('DOMContentLoaded', function () {
                             src: progressData.source,
                             type: 'video/mp4'
                         });
+                        // if the Gist provided a different source (e.g. -1), update subtitles to match
+                        try {
+                            var srcUrl = progressData.source;
+                            var filename = srcUrl.substring(srcUrl.lastIndexOf('/') + 1);
+                            var vttName = filename.replace(/\.mp4$/i, '.vtt');
+                            var newVtt = 'https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/' + encodeURIComponent(vttName);
+                            var trackEl = document.querySelector('#my-video track[kind="subtitles"]');
+                            if (trackEl) {
+                                trackEl.src = newVtt;
+                                try {
+                                    var tt = player.textTracks();
+                                    for (var i = 0; i < tt.length; i++) {
+                                        tt[i].mode = 'disabled';
+                                    }
+                                } catch (e) {}
+                            }
+                        } catch (e) {}
                         player.load();
                     }
                     if (progressData.progress) {
@@ -216,6 +233,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 src: 'https://github.com/Methusan105/Series/releases/download/SL2/Solo.Leveling.S02E11-1.mp4',
                 type: 'video/mp4'
             });
+            // update subtitles to the matching VTT for the new source
+            var newVtt = 'https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E11-1.vtt';
+            var trackEl = document.querySelector('#my-video track[kind="subtitles"]');
+            if (trackEl) {
+                trackEl.src = newVtt;
+                // disable existing text tracks to force a reload
+                try {
+                    var tt = player.textTracks();
+                    for (var i = 0; i < tt.length; i++) {
+                        tt[i].mode = 'disabled';
+                    }
+                } catch (e) {}
+            }
             player.load();
             player.play();
         });
