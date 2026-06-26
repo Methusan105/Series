@@ -152,6 +152,47 @@ document.addEventListener('DOMContentLoaded', function () {
         setupVideoPlayback();
     }
 
+    function updateSubtitleTrack(vttUrl) {
+        var videoEl = document.getElementById('my-video');
+        if (!videoEl) {
+            return;
+        }
+
+        var existingTrack = videoEl.querySelector('track[kind="subtitles"]');
+        if (existingTrack) {
+            existingTrack.remove();
+        }
+
+        var newTrack = document.createElement('track');
+        newTrack.kind = 'subtitles';
+        newTrack.src = vttUrl;
+        newTrack.srclang = 'en';
+        newTrack.label = 'English';
+        newTrack.default = true;
+        videoEl.appendChild(newTrack);
+
+        try {
+            var textTracks = player.textTracks();
+            for (var i = 0; i < textTracks.length; i++) {
+                if (textTracks[i].kind === 'subtitles') {
+                    textTracks[i].mode = 'disabled';
+                }
+            }
+
+            setTimeout(function () {
+                try {
+                    var updatedTracks = player.textTracks();
+                    for (var j = 0; j < updatedTracks.length; j++) {
+                        if (updatedTracks[j].kind === 'subtitles' && updatedTracks[j].label === 'English') {
+                            updatedTracks[j].mode = 'showing';
+                            break;
+                        }
+                    }
+                } catch (e) {}
+            }, 200);
+        } catch (e) {}
+    }
+
     function setupVideoPlayback() {
         var gistScript = document.createElement('script');
         gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
@@ -209,16 +250,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             var filename = srcUrl.substring(srcUrl.lastIndexOf('/') + 1);
                             var vttName = filename.replace(/\.mp4$/i, '.vtt');
                             var newVtt = 'https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/' + encodeURIComponent(vttName);
-                            var trackEl = document.querySelector('#my-video track[kind="subtitles"]');
-                            if (trackEl) {
-                                trackEl.src = newVtt;
-                                try {
-                                    var tt = player.textTracks();
-                                    for (var i = 0; i < tt.length; i++) {
-                                        tt[i].mode = 'disabled';
-                                    }
-                                } catch (e) {}
-                            }
+                            updateSubtitleTrack(newVtt);
                         } catch (e) {}
                         player.load();
                     }
@@ -235,17 +267,7 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             // update subtitles to the matching VTT for the new source
             var newVtt = 'https://raw.githubusercontent.com/Methusan105/Series/main/Solo%20Leveling/S02/Subs/Solo.Leveling.S02E10-1.vtt';
-            var trackEl = document.querySelector('#my-video track[kind="subtitles"]');
-            if (trackEl) {
-                trackEl.src = newVtt;
-                // disable existing text tracks to force a reload
-                try {
-                    var tt = player.textTracks();
-                    for (var i = 0; i < tt.length; i++) {
-                        tt[i].mode = 'disabled';
-                    }
-                } catch (e) {}
-            }
+            updateSubtitleTrack(newVtt);
             player.load();
             player.play();
         });
