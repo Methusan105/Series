@@ -22,6 +22,27 @@ on:
           - small
           - medium
           - large
+      lang:
+        description: 'Language code for subtitle translation'
+        required: true
+        default: 'en'
+        type: choice
+        options:
+          - en
+          - es
+          - fr
+          - de
+          - it
+          - pt
+          - nl
+          - ru
+          - ja
+          - zh
+          - ko
+          - ar
+          - hi
+          - ta
+          - tr
 
 jobs:
   transcribe:
@@ -99,10 +120,10 @@ jobs:
                   print(f"Error extracting audio with ffmpeg: {e}")
                   return None
 
-          def transcribe_audio(audio_path, model_name="base"):
-              print(f"Transcribing audio with model '{model_name}'...")
+          def transcribe_audio(audio_path, model_name="base", language="en"):
+              print(f"Transcribing audio with model '{model_name}' in language '{language}'...")
               model = whisper.load_model(model_name)
-              return model.transcribe(audio_path, verbose=False)
+              return model.transcribe(audio_path, verbose=False, language=language)
 
           def format_timestamp(seconds):
               hours = int(seconds // 3600)
@@ -124,7 +145,7 @@ jobs:
                           vtt_file.write(f"{text}\n\n")
               return vtt_output_path
 
-          def mp4_to_vtt(mp4_path, vtt_output_path, model="base"):
+          def mp4_to_vtt(mp4_path, vtt_output_path, model="base", lang="en"):
               if not os.path.exists(mp4_path):
                   print(f"Error: Input file not found: {mp4_path}")
                   sys.exit(1)
@@ -132,7 +153,7 @@ jobs:
               extracted_audio = extract_audio_from_mp4(mp4_path, audio_path)
               if not extracted_audio:
                   sys.exit(1)
-              transcript = transcribe_audio(extracted_audio, model)
+              transcript = transcribe_audio(extracted_audio, model, lang)
               create_vtt_from_transcript(transcript, vtt_output_path)
               if os.path.exists(audio_path):
                   os.remove(audio_path)
@@ -142,14 +163,15 @@ jobs:
               parser.add_argument("mp4_file", help="Path to MP4 file")
               parser.add_argument("-o", "--output", required=True, help="Output VTT file path")
               parser.add_argument("-m", "--model", choices=["tiny", "base", "small", "medium", "large"], default="base")
+              parser.add_argument("-l", "--lang", choices=["en", "es", "fr", "de", "it", "pt", "nl", "ru", "ja", "zh", "ko", "ar", "hi", "ta", "tr"], default="en", help="Language code for transcription")
               args = parser.parse_args()
-              mp4_to_vtt(args.mp4_file, args.output, model=args.model)
+              mp4_to_vtt(args.mp4_file, args.output, model=args.model, lang=args.lang)
           PY
           chmod +x transcript_to_vtt.py
 
       - name: Run transcription script
         run: |
-          python transcript_to_vtt.py "downloaded.mp4" -o "${{ github.event.inputs.output_vtt }}" -m "${{ github.event.inputs.model }}"
+          python transcript_to_vtt.py "downloaded.mp4" -o "${{ github.event.inputs.output_vtt }}" -m "${{ github.event.inputs.model }}" -l "${{ github.event.inputs.lang }}"
 
       - name: Upload generated VTT artifact
         if: success()
