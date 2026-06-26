@@ -158,39 +158,48 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        try {
+            var existingRemoteTracks = player.remoteTextTracks();
+            for (var i = existingRemoteTracks.length - 1; i >= 0; i--) {
+                if (existingRemoteTracks[i].kind === 'subtitles') {
+                    player.removeRemoteTextTrack(existingRemoteTracks[i]);
+                }
+            }
+        } catch (e) {}
+
         var existingTrack = videoEl.querySelector('track[kind="subtitles"]');
         if (existingTrack) {
             existingTrack.remove();
         }
 
-        var newTrack = document.createElement('track');
-        newTrack.kind = 'subtitles';
-        newTrack.src = vttUrl;
-        newTrack.srclang = 'en';
-        newTrack.label = 'English';
-        newTrack.default = true;
-        videoEl.appendChild(newTrack);
-
         try {
-            var textTracks = player.textTracks();
-            for (var i = 0; i < textTracks.length; i++) {
-                if (textTracks[i].kind === 'subtitles') {
-                    textTracks[i].mode = 'disabled';
-                }
-            }
+            player.addRemoteTextTrack({
+                kind: 'subtitles',
+                src: vttUrl,
+                srclang: 'en',
+                label: 'English',
+                default: true
+            }, false);
+        } catch (e) {
+            var fallbackTrack = document.createElement('track');
+            fallbackTrack.kind = 'subtitles';
+            fallbackTrack.src = vttUrl;
+            fallbackTrack.srclang = 'en';
+            fallbackTrack.label = 'English';
+            fallbackTrack.default = true;
+            videoEl.appendChild(fallbackTrack);
+        }
 
-            setTimeout(function () {
-                try {
-                    var updatedTracks = player.textTracks();
-                    for (var j = 0; j < updatedTracks.length; j++) {
-                        if (updatedTracks[j].kind === 'subtitles' && updatedTracks[j].label === 'English') {
-                            updatedTracks[j].mode = 'showing';
-                            break;
-                        }
+        setTimeout(function () {
+            try {
+                var textTracks = player.textTracks();
+                for (var j = 0; j < textTracks.length; j++) {
+                    if (textTracks[j].kind === 'subtitles') {
+                        textTracks[j].mode = 'showing';
                     }
-                } catch (e) {}
-            }, 200);
-        } catch (e) {}
+                }
+            } catch (e) {}
+        }, 400);
     }
 
     function setupVideoPlayback() {
