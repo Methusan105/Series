@@ -23,26 +23,26 @@ on:
           - medium
           - large
       lang:
-        description: 'Language code for subtitle translation'
+        description: 'Language for subtitle transcription'
         required: true
-        default: 'en'
+        default: 'English'
         type: choice
         options:
-          - en
-          - es
-          - fr
-          - de
-          - it
-          - pt
-          - nl
-          - ru
-          - ja
-          - zh
-          - ko
-          - ar
-          - hi
-          - ta
-          - tr
+          - English
+          - Spanish
+          - French
+          - German
+          - Italian
+          - Portuguese
+          - Dutch
+          - Russian
+          - Japanese
+          - Chinese
+          - Korean
+          - Arabic
+          - Hindi
+          - Tamil
+          - Turkish
 
 jobs:
   transcribe:
@@ -94,6 +94,24 @@ jobs:
               USE_MOVIEPY = True
           except ImportError:
               USE_MOVIEPY = False
+
+          LANGUAGE_MAP = {
+              "English": "en",
+              "Spanish": "es",
+              "French": "fr",
+              "German": "de",
+              "Italian": "it",
+              "Portuguese": "pt",
+              "Dutch": "nl",
+              "Russian": "ru",
+              "Japanese": "ja",
+              "Chinese": "zh",
+              "Korean": "ko",
+              "Arabic": "ar",
+              "Hindi": "hi",
+              "Tamil": "ta",
+              "Turkish": "tr"
+          }
 
           def extract_audio_from_mp4(mp4_path, output_audio_path="temp_audio.wav"):
               print(f"Extracting audio from {mp4_path}...")
@@ -163,9 +181,10 @@ jobs:
               parser.add_argument("mp4_file", help="Path to MP4 file")
               parser.add_argument("-o", "--output", required=True, help="Output VTT file path")
               parser.add_argument("-m", "--model", choices=["tiny", "base", "small", "medium", "large"], default="base")
-              parser.add_argument("-l", "--lang", choices=["en", "es", "fr", "de", "it", "pt", "nl", "ru", "ja", "zh", "ko", "ar", "hi", "ta", "tr"], default="en", help="Language code for transcription")
+              parser.add_argument("-l", "--lang", choices=list(LANGUAGE_MAP.keys()), default="English", help="Language for transcription")
               args = parser.parse_args()
-              mp4_to_vtt(args.mp4_file, args.output, model=args.model, lang=args.lang)
+              lang_code = LANGUAGE_MAP.get(args.lang, "en")
+              mp4_to_vtt(args.mp4_file, args.output, model=args.model, lang=lang_code)
           PY
           chmod +x transcript_to_vtt.py
 
