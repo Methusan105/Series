@@ -18,7 +18,7 @@ on:
       model:
         description: Whisper model
         required: true
-        default: base
+        default: large
         type: choice
         options:
           - tiny
