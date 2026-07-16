@@ -3,18 +3,22 @@ name: Transcribe MP4 to VTT
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "Release tag to upload VTT to"
+        required: true
+
+      asset_name:
+        description: "MP4 asset name"
+        required: true
+
       mp4_url:
-        description: 'URL to download the MP4 file from'
+        description: "Browser download URL of MP4"
         required: true
-        default: 'https://example.com/video.mp4'
-      output_vtt:
-        description: 'Output VTT file path'
-        required: true
-        default: 'output.vtt'
+
       model:
-        description: 'Whisper model to use'
+        description: Whisper model
         required: true
-        default: 'base'
+        default: base
         type: choice
         options:
           - tiny
@@ -22,179 +26,143 @@ on:
           - small
           - medium
           - large
-      lang:
-        description: 'Language for subtitle transcription'
-        required: true
-        default: 'English'
-        type: choice
-        options:
-          - English
-          - Spanish
-          - French
-          - German
-          - Italian
-          - Portuguese
-          - Dutch
-          - Russian
-          - Japanese
-          - Chinese
-          - Korean
-          - Arabic
-          - Hindi
-          - Tamil
-          - Turkish
+
+permissions:
+  contents: write
 
 jobs:
   transcribe:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.14'
+          python-version: "3.12"
 
-      - name: Install system dependencies
+      - name: Install ffmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Install Python dependencies
+      - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install openai-whisper moviepy
 
-      - name: Download MP4 from URL
+      - name: Download MP4
         run: |
-          echo "Downloading MP4 from ${{ github.event.inputs.mp4_url }}"
-          curl -L -o downloaded.mp4 "${{ github.event.inputs.mp4_url }}"
-          ls -lh downloaded.mp4
+          echo "Downloading:"
+          echo "${{ github.event.inputs.mp4_url }}"
 
-      - name: Write transcription script
+          curl -L \
+            "${{ github.event.inputs.mp4_url }}" \
+            -o input.mp4
+
+          ls -lh input.mp4
+
+      - name: Create transcription script
         run: |
           cat > transcript_to_vtt.py <<'PY'
-          #!/usr/bin/env python3
-          import os
-          import sys
+          import whisper
           import argparse
-          import subprocess
 
-          try:
-              import whisper
-          except ImportError:
-              print("Error: whisper not installed. Install with:")
-              print("  python -m pip install openai-whisper")
-              sys.exit(1)
 
-          try:
-              from moviepy.editor import VideoFileClip
-              USE_MOVIEPY = True
-          except ImportError:
-              USE_MOVIEPY = False
+          def timestamp(seconds):
+              h = int(seconds // 3600)
+              m = int((seconds % 3600) // 60)
+              s = seconds % 60
+              ms = int((s % 1) * 1000)
 
-          LANGUAGE_MAP = {
-              "English": "en",
-              "Spanish": "es",
-              "French": "fr",
-              "German": "de",
-              "Italian": "it",
-              "Portuguese": "pt",
-              "Dutch": "nl",
-              "Russian": "ru",
-              "Japanese": "ja",
-              "Chinese": "zh",
-              "Korean": "ko",
-              "Arabic": "ar",
-              "Hindi": "hi",
-              "Tamil": "ta",
-              "Turkish": "tr"
-          }
+              return f"{h:02}:{m:02}:{int(s):02}.{ms:03}"
 
-          def extract_audio_from_mp4(mp4_path, output_audio_path="temp_audio.wav"):
-              print(f"Extracting audio from {mp4_path}...")
-              if USE_MOVIEPY:
-                  video = VideoFileClip(mp4_path)
-                  audio = video.audio
-                  if audio is None:
-                      print("Error: No audio found in video file.")
-                      return None
-                  audio.write_audiofile(output_audio_path, verbose=False, logger=None)
-                  video.close()
-                  return output_audio_path
-              try:
-                  cmd = [
-                      "ffmpeg",
-                      "-i", mp4_path,
-                      "-q:a", "9",
-                      "-y",
-                      output_audio_path
-                  ]
-                  subprocess.run(cmd, check=True, capture_output=True)
-                  return output_audio_path
-              except Exception as e:
-                  print(f"Error extracting audio with ffmpeg: {e}")
-                  return None
 
-          def transcribe_audio(audio_path, model_name="base", language="en"):
-              print(f"Transcribing audio with model '{model_name}' in language '{language}'...")
-              model = whisper.load_model(model_name)
-              return model.transcribe(audio_path, verbose=False, language=language)
+          parser = argparse.ArgumentParser()
 
-          def format_timestamp(seconds):
-              hours = int(seconds // 3600)
-              minutes = int((seconds % 3600) // 60)
-              secs = seconds % 60
-              millis = int((secs % 1) * 1000)
-              return f"{hours:02d}:{minutes:02d}:{int(secs):02d}.{millis:03d}"
+          parser.add_argument(
+              "input"
+          )
 
-          def create_vtt_from_transcript(transcript_result, vtt_output_path):
-              segments = transcript_result.get("segments", [])
-              with open(vtt_output_path, "w", encoding="utf-8") as vtt_file:
-                  vtt_file.write("WEBVTT\n\n")
-                  for segment in segments:
-                      start = segment["start"]
-                      end = segment["end"]
-                      text = segment["text"].strip()
-                      if text:
-                          vtt_file.write(f"{format_timestamp(start)} --> {format_timestamp(end)}\n")
-                          vtt_file.write(f"{text}\n\n")
-              return vtt_output_path
+          parser.add_argument(
+              "-o",
+              "--output",
+              required=True
+          )
 
-          def mp4_to_vtt(mp4_path, vtt_output_path, model="base", lang="en"):
-              if not os.path.exists(mp4_path):
-                  print(f"Error: Input file not found: {mp4_path}")
-                  sys.exit(1)
-              audio_path = "temp_audio.wav"
-              extracted_audio = extract_audio_from_mp4(mp4_path, audio_path)
-              if not extracted_audio:
-                  sys.exit(1)
-              transcript = transcribe_audio(extracted_audio, model, lang)
-              create_vtt_from_transcript(transcript, vtt_output_path)
-              if os.path.exists(audio_path):
-                  os.remove(audio_path)
+          parser.add_argument(
+              "-m",
+              "--model",
+              default="base"
+          )
 
-          if __name__ == "__main__":
-              parser = argparse.ArgumentParser(description="Convert MP4 video to VTT subtitle file using Whisper.")
-              parser.add_argument("mp4_file", help="Path to MP4 file")
-              parser.add_argument("-o", "--output", required=True, help="Output VTT file path")
-              parser.add_argument("-m", "--model", choices=["tiny", "base", "small", "medium", "large"], default="base")
-              parser.add_argument("-l", "--lang", choices=list(LANGUAGE_MAP.keys()), default="English", help="Language for transcription")
-              args = parser.parse_args()
-              lang_code = LANGUAGE_MAP.get(args.lang, "en")
-              mp4_to_vtt(args.mp4_file, args.output, model=args.model, lang=lang_code)
+
+          args = parser.parse_args()
+
+
+          print("Loading Whisper model...")
+          model = whisper.load_model(args.model)
+
+
+          print("Transcribing...")
+          result = model.transcribe(
+              args.input,
+              language="en"
+          )
+
+
+          print("Writing VTT...")
+
+          with open(
+              args.output,
+              "w",
+              encoding="utf-8"
+          ) as f:
+
+              f.write("WEBVTT\n\n")
+
+              for segment in result["segments"]:
+
+                  start = timestamp(segment["start"])
+                  end = timestamp(segment["end"])
+                  text = segment["text"].strip()
+
+                  if text:
+                      f.write(
+                          f"{start} --> {end}\n"
+                      )
+                      f.write(
+                          text + "\n\n"
+                      )
+
+          print("Done")
           PY
-          chmod +x transcript_to_vtt.py
 
-      - name: Run transcription script
+      - name: Run transcription
         run: |
-          python transcript_to_vtt.py "downloaded.mp4" -o "${{ github.event.inputs.output_vtt }}" -m "${{ github.event.inputs.model }}" -l "${{ github.event.inputs.lang }}"
+          output="${{ github.event.inputs.asset_name }}"
+          output="${output%.mp4}.vtt"
 
-      - name: Upload generated VTT artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: transcript-vtt
-          path: "${{ github.event.inputs.output_vtt }}"
+          python transcript_to_vtt.py \
+            input.mp4 \
+            -o "$output" \
+            -m "${{ github.event.inputs.model }}"
+
+          echo "VTT created:"
+          ls -lh "$output"
+
+      - name: Upload VTT to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          output="${{ github.event.inputs.asset_name }}"
+          output="${output%.mp4}.vtt"
+
+          gh release upload \
+            "${{ github.event.inputs.release_tag }}" \
+            "$output" \
+            --repo "${{ github.repository }}" \
+            --clobber
