@@ -1,0 +1,53 @@
+name: Dispatch Release Transcriptions
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (example: v1.0.0)"
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get release MP4 assets
+        id: assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Finding MP4 assets in release ${{ github.event.inputs.release_tag }}"
+
+          gh release view "${{ github.event.inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --json assets \
+            --jq '.assets[]
+              | select(.name | endswith(".mp4"))
+              | [.name, .downloadUrl]
+              | @tsv' > assets.txt
+
+          cat assets.txt
+
+      - name: Dispatch transcription workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while IFS=$'\t' read -r asset url
+          do
+            echo "Starting transcription for:"
+            echo "$asset"
+            echo "$url"
+
+            gh workflow run transcribe-vtt.yml \
+              --repo "${{ github.repository }}" \
+              --ref "${{ github.ref_name }}" \
+              -f release_tag="${{ github.event.inputs.release_tag }}" \
+              -f asset_name="$asset" \
+              -f mp4_url="$url"
+
+          done < assets.txt
