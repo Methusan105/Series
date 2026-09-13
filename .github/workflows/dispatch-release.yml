@@ -8,6 +8,18 @@ on:
         required: true
         type: string
 
+      model:
+        description: "Whisper model to use for all dispatches"
+        required: true
+        default: distil-large-v3
+        type: choice
+        options:
+          - tiny.en
+          - base.en
+          - small.en
+          - medium.en
+          - distil-large-v3
+
 permissions:
   contents: read
   actions: write
@@ -28,6 +40,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --json assets \
             --jq '.assets[]
+
               | select(.name | endswith(".mp4"))
               | .name' > assets.txt
 
@@ -53,11 +66,13 @@ jobs:
             echo "Download URL:"
             echo "$url"
 
+            # Triggers your exact target workflow and forwards the model selection
             gh workflow run transcribe-vtt.yml \
               --repo "${{ github.repository }}" \
               --ref "${{ github.ref_name }}" \
               -f release_tag="${{ github.event.inputs.release_tag }}" \
               -f asset_name="$asset" \
-              -f mp4_url="$url"
+              -f mp4_url="$url" \
+              -f model="${{ github.event.inputs.model }}"
 
           done < assets.txt

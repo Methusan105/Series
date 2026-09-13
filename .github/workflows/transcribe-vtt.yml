@@ -16,16 +16,16 @@ on:
         required: true
 
       model:
-        description: Whisper model
+        description: Whisper model (distil-large-v3 is highly recommended for speed and accuracy)
         required: true
-        default: large
+        default: distil-large-v3
         type: choice
         options:
-          - tiny
-          - base
-          - small
-          - medium
-          - large
+          - tiny.en
+          - base.en
+          - small.en
+          - medium.en
+          - distil-large-v3
 
 permissions:
   contents: write
@@ -35,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -52,7 +51,7 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          python -m pip install openai-whisper moviepy
+          python -m pip install faster-whisper
 
       - name: Download MP4
         run: |
@@ -68,8 +67,8 @@ jobs:
       - name: Create transcription script
         run: |
           cat > transcript_to_vtt.py <<'PY'
-          import whisper
           import argparse
+          from faster_whisper import WhisperModel
 
 
           def timestamp(seconds):
@@ -82,61 +81,42 @@ jobs:
 
 
           parser = argparse.ArgumentParser()
-
-          parser.add_argument(
-              "input"
-          )
-
-          parser.add_argument(
-              "-o",
-              "--output",
-              required=True
-          )
-
-          parser.add_argument(
-              "-m",
-              "--model",
-              default="base"
-          )
-
-
+          parser.add_argument("input")
+          parser.add_argument("-o", "--output", required=True)
+          parser.add_argument("-m", "--model", default="distil-large-v3")
           args = parser.parse_args()
 
-
-          print("Loading Whisper model...")
-          model = whisper.load_model(args.model)
-
-
-          print("Transcribing...")
-          result = model.transcribe(
-              args.input,
-              language="en"
+          print(f"Loading faster-whisper model '{args.model}' optimized for CPU...")
+          
+          # Use optimal multi-threading settings for GitHub's 2-core CPU runner
+          model = WhisperModel(
+              args.model, 
+              device="cpu", 
+              compute_type="int8",
+              cpu_threads=2,
+              num_workers=2
           )
 
+          print("Transcribing...")
+          segments, info = model.transcribe(
+              args.input,
+              language="en",
+              beam_size=5,
+              vad_filter=True  # Stops text looping during silent themes/intro music
+          )
 
           print("Writing VTT...")
-
-          with open(
-              args.output,
-              "w",
-              encoding="utf-8"
-          ) as f:
-
+          with open(args.output, "w", encoding="utf-8") as f:
               f.write("WEBVTT\n\n")
 
-              for segment in result["segments"]:
-
-                  start = timestamp(segment["start"])
-                  end = timestamp(segment["end"])
-                  text = segment["text"].strip()
+              for segment in segments:
+                  start = timestamp(segment.start)
+                  end = timestamp(segment.end)
+                  text = segment.text.strip()
 
                   if text:
-                      f.write(
-                          f"{start} --> {end}\n"
-                      )
-                      f.write(
-                          text + "\n\n"
-                      )
+                      f.write(f"{start} --> {end}\n")
+                      f.write(text + "\n\n")
 
           print("Done")
           PY
