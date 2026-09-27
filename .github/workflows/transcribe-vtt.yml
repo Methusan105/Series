@@ -151,18 +151,21 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config pull.rebase true
 
-          # Create directory and move target file
+          # Create directory and move target VTT file
           mkdir -p "$target_dir"
           mv "$vtt_file" "$target_dir/"
 
-          # Clean up temporary build artifacts so workspace is completely clean
-          rm -f input.mp4 transcript_to_vtt.py
-
-          # Stage and commit the VTT
+          # Stage and commit the VTT file FIRST
           git add "$target_dir/$vtt_file"
           git commit -m "Add transcription for ${asset%.mp4} in $target_dir" || echo "No changes to commit"
 
-          # Fetch, pull with rebase, and push
+          # Clean up ANY remaining temporary/untracked/modified files (like mp4, pycache, etc.)
+          git clean -fd
+          git checkout -- .
+
+          # Fetch latest remote changes and rebase clean local commit
           git fetch origin main
-          git pull origin main
+          git rebase origin/main
+
+          # Push to repository
           git push origin main
