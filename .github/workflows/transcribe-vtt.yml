@@ -4,19 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to upload VTT to"
+        description: "Release tag where MP4 is stored"
         required: true
 
       asset_name:
-        description: "MP4 asset name"
-        required: true
-
-      mp4_url:
-        description: "Browser download URL of MP4"
+        description: "MP4 asset name (e.g., Smallville.S06E01.mp4)"
         required: true
 
       model:
-        description: Whisper model (distil-large-v3 is highly recommended for speed and accuracy)
+        description: Whisper model
         required: true
         default: distil-large-v3
         type: choice
@@ -57,7 +53,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Downloading asset '${{ github.event.inputs.asset_name }}' from release '${{ github.event.inputs.release_tag }}'..."
+          echo "Downloading asset '${{ github.event.inputs.asset_name }}'..."
 
           gh release download "${{ github.event.inputs.release_tag }}" \
             --repo "${{ github.repository }}" \
@@ -88,9 +84,7 @@ jobs:
           parser.add_argument("-m", "--model", default="distil-large-v3")
           args = parser.parse_args()
 
-          print(f"Loading faster-whisper model '{args.model}' optimized for CPU...")
-          
-          # Use optimal multi-threading settings for GitHub's 2-core CPU runner
+          print(f"Loading faster-whisper model '{args.model}'...")
           model = WhisperModel(
               args.model, 
               device="cpu", 
@@ -104,7 +98,7 @@ jobs:
               args.input,
               language="en",
               beam_size=5,
-              vad_filter=True  # Stops text looping during silent themes/intro music
+              vad_filter=True
           )
 
           print("Writing VTT...")
@@ -133,18 +127,36 @@ jobs:
             -o "$output" \
             -m "${{ github.event.inputs.model }}"
 
-          echo "VTT created:"
           ls -lh "$output"
 
-      - name: Upload VTT to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and push VTT to dynamically generated folder path
         run: |
-          output="${{ github.event.inputs.asset_name }}"
-          output="${output%.mp4}.vtt"
+          asset="${{ github.event.inputs.asset_name }}"
+          vtt_file="${asset%.mp4}.vtt"
 
-          gh release upload \
-            "${{ github.event.inputs.release_tag }}" \
-            "$output" \
-            --repo "${{ github.repository }}" \
-            --clobber
+          # Parse Show and Season from filename pattern (e.g. Smallville.S06E01.mp4)
+          show=$(echo "$asset" | sed -E 's/^(.+)\.S[0-9]{2}E[0-9]{2}.*$/\1/')
+          season=$(echo "$asset" | sed -E 's/^.+\.(S[0-9]{2})E[0-9]{2}.*$/\1/')
+
+          target_dir="${show}/${season}/Subs"
+
+          echo "Target Directory: $target_dir"
+
+          # Configure Git identity
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Sync with remote first to prevent rejection on push
+          git fetch origin main
+          git pull origin main --rebase
+
+          # Safely handle directory creation
+          mkdir -p "$target_dir"
+
+          # Move VTT file into parsed path
+          mv "$vtt_file" "$target_dir/"
+
+          # Add, commit, and push
+          git add "$target_dir/$vtt_file"
+          git commit -m "Add transcription for ${asset%.mp4} in $target_dir" || echo "No changes to commit"
+          git push origin main
