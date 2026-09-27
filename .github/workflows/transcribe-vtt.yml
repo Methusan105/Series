@@ -8,8 +8,12 @@ on:
         required: true
 
       asset_name:
-        description: "MP4 asset name (e.g., Smallville.S06E01.mp4)"
+        description: "MP4 asset name (e.g., Smallville.S10E01.mp4)"
         required: true
+
+      mp4_url:
+        description: "Browser download URL of MP4"
+        required: false
 
       model:
         description: Whisper model
