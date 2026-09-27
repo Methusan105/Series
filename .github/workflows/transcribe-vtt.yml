@@ -151,17 +151,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config pull.rebase true
 
-          # Ensure target directory exists and move file
+          # Create directory and move target file
           mkdir -p "$target_dir"
           mv "$vtt_file" "$target_dir/"
 
-          # 1. STAGE & COMMIT FIRST (cleans up workspace before pulling)
+          # Clean up temporary build artifacts so workspace is completely clean
+          rm -f input.mp4 transcript_to_vtt.py
+
+          # Stage and commit the VTT
           git add "$target_dir/$vtt_file"
           git commit -m "Add transcription for ${asset%.mp4} in $target_dir" || echo "No changes to commit"
 
-          # 2. FETCH & PULL SECOND (now safe since working directory is clean)
+          # Fetch, pull with rebase, and push
           git fetch origin main
           git pull origin main
-
-          # 3. PUSH FINAL REBASED COMMIT
           git push origin main
