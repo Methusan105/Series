@@ -57,20 +57,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Downloading:"
-          echo "${{ github.event.inputs.mp4_url }}"
+          echo "Downloading asset '${{ github.event.inputs.asset_name }}' from release '${{ github.event.inputs.release_tag }}'..."
 
-          curl -L \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            "${{ github.event.inputs.mp4_url }}" \
-            -o input.mp4
-
-          ls -lh input.mp4
-
-          curl -L \
-            "${{ github.event.inputs.mp4_url }}" \
-            -o input.mp4
+          gh release download "${{ github.event.inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ github.event.inputs.asset_name }}" \
+            --output input.mp4
 
           ls -lh input.mp4
 
