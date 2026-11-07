@@ -118,7 +118,7 @@ player.on("error", function () {
   }
 });
 
-player.on("pause", function () { saveProgress(); });
+player.on("pause", function () { saveProgress(true); });
 player.on("ended", function () { saveProgress(true); });
 player.on("play", function () {});
 

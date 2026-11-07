@@ -4,7 +4,7 @@ body{display:flex;flex-direction:column;align-items:center;min-height:100vh}
 .video-container{width:100%;max-width:1100px;padding:24px 16px;box-sizing:border-box}
 video#my-video{width:100%;height:auto;background:#000;border-radius:10px;display:block;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,.55)}
 .vjs-big-play-button{top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;border-radius:50%!important;background:rgba(229,9,20,.85)!important;border:none!important;width:78px!important;height:78px!important;box-shadow:0 0 30px rgba(229,9,20,.45)}
-.vjs-big-play-button::before{content:"\25B6";font-size:34px;color:#fff;line-height:78px;text-align:center;text-indent:6px}
+.vjs-big-play-button::before{content:"▶";font-size:34px;color:#fff;line-height:78px;text-align:center;text-indent:0}
 .vjs-control-bar{background:linear-gradient(180deg,rgba(20,20,20,.85),rgba(20,20,20,.35))!important;border-top:none!important;border-radius:0 0 10px 10px!important}
 .video-js:not(.vjs-user-active):not(:hover) .vjs-control-bar{opacity:0;transition:opacity .35s ease}
 .video-js.vjs-user-active .vjs-control-bar,.video-js:hover .vjs-control-bar{opacity:1}
