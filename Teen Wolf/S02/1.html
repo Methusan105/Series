@@ -1,275 +1,140 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teen Wolf &gt; S02 &gt; 1</title>
   <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
   <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
-  <!-- If you'd like to support IE8 (for Video.js versions prior to v7) -->
-  <!-- <script src="https://vjs.zencdn.net/ie8/1.1.2/videojs-ie8.min.js"></script> -->
+  <script src="/Series/Playback.js"></script>
+  <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+  <link rel="stylesheet" href="/Series/assets/css/player.css" />
 </head>
 <body>
-  <video
-    id="my-video"
-    class="video-js"
-    controls
-    preload="auto"
-    width="640"
-    height="264"
-    poster="MY_VIDEO_POSTER.jpg"
-    data-setup='{ "customControlsOnMobile": true, "nativeControlsForTouch": false }'
-  >
-    <source src="https://github.com/Methusan105/Series/releases/download/TW2/Teen.Wolf.S02E01.mkv" type="video/mp4" />
-    <p class="vjs-no-js">
-      To view this video please enable JavaScript, and consider upgrading to a
-      web browser that
-      <a href="https://videojs.com/html5-video-support/" target="_blank"
-        >supports HTML5 video</a
-      >
-    </p>
-  </video>
-<script>
-var video = document.getElementById('my-video');
-var player = videojs("my-video");
-var spacePressed = false;
-var pageLoadTime = new Date().getTime();
-var saveInterval = 120000; // 2 minutes in milliseconds
-
-document.addEventListener('DOMContentLoaded', function () {
-    document.addEventListener("keydown", function (event) {
-        if (event.key === " ") {
-            event.preventDefault();
-            togglePause();
-        }
-        if (event.key === "f") {
-            fullscr();
-        }
-        if (event.key === "ArrowLeft") {
-            seekBackward();
-        }
-        if (event.key === "ArrowRight") {
-            seekForward();
-        }
-    });
-
-    function togglePause() {
-        if (player.paused()) {
-            player.play();
-        } else {
-            player.pause();
-        }
+  <div class="video-container">
+    <video
+      id="my-video"
+      class="video-js vjs-fluid"
+      controls
+      preload="metadata"
+      playsinline
+      poster="MY_VIDEO_POSTER.jpg"
+    >
+      <source src="https://github.com/Methusan105/Series/releases/download/TW2/Teen.Wolf.S02E01.mkv" type="video/mp4" />
+      
+      <p class="vjs-no-js">
+        To view this video please enable JavaScript, and consider upgrading to a
+        web browser that
+        <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+      </p>
+    </video>
+    <div class="player-footer">
+      <a href="/Series/Teen%20Wolf/S02/2.html" class="next-episode" onclick="clearGistProgress()">Next Episode &rarr;</a>
+      <button class="clear-btn" type="button" onclick="clearGistProgress()">Clear Progress</button>
+    </div>
+    <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen</p>
+  </div>
+  <script>
+var player = videojs("my-video", {
+  preload: "metadata",
+  playbackRates: [0.5, 1, 1.25, 1.5, 2],
+  fluid: true,
+  plugins: {
+    hotkeys: {
+      volumeStep: 0.1,
+      seekStep: 5,
+      enableModifiersForNumbers: false,
+      alwaysCaptureHotkeys: true,
+      seekModifiers: false
     }
-
-    function fullscr() {
-        if (player.isFullscreen()) {
-            player.exitFullscreen();
-        } else {
-            player.requestFullscreen();
-        }
-    }
-
-    function seekForward() {
-        player.currentTime(player.currentTime() + 5);
-    }
-
-    function seekBackward() {
-        player.currentTime(player.currentTime() - 5);
-    }
-
-    var gistFilename = 'video_progress.json';
-    var isVideoPaused = false;
-    var username = sessionStorage.getItem('githubUsername');
-    var gistId = sessionStorage.getItem('githubGistId');
-    var accessToken = sessionStorage.getItem('githubAccessToken');
-
-    if (!username || !gistId || !accessToken) {
-        var isTV = detectTV()
-        if (isTV) {
-            username = prompt('Enter your GitHub username:');
-            gistId = prompt('Enter your Gist ID:');
-            accessToken = prompt('Enter your GitHub Personal Access Token:');
-            sessionStorage.setItem('githubUsername', username);
-            sessionStorage.setItem('githubGistId', gistId);
-            sessionStorage.setItem('githubAccessToken', accessToken);
-            setupVideoPlayback();
-        }
-        if (!document.getElementById('fileInput')) {
-            var fileInput = createFileInput();
-            document.body.appendChild(fileInput);
-            button.addEventListener('click', function() {
-                fileInput.click();
-            });
-            document.body.appendChild(button);
-        }
-    } else {
-        setupVideoPlayback();
-    }
-
-    function detectTV() {
-        var userAgent = navigator.userAgent.toLowerCase();
-        return userAgent.includes('tv');
-    }
-
-    function createFileInput() {
-        var input = document.createElement('input');
-        input.id = 'fileInput';
-        input.type = 'file';
-        input.accept = '.txt';
-        input.addEventListener('change', function(event) {
-            var file = event.target.files[0];
-            if (file) {
-                var reader = new FileReader();
-                reader.onload = function(e) {
-                    processFileContent(e.target.result);
-                };
-                reader.readAsText(file);
-            }
-        });
-        return input;
-    }
-
-    function processFileContent(content) {
-        var lines = content.split('\n');
-        lines.forEach(function(line) {
-            var parts = line.split('=');
-            if (parts.length === 2) {
-                var key = parts[0].trim().toLowerCase();
-                var value = parts[1].trim();
-                if (key === 'username') {
-                    username = value;
-                } else if (key === 'gist id') {
-                    gistId = value;
-                } else if (key === 'token') {
-                    accessToken = value;
-                }
-            }
-        });
-        console.log('Username:', username);
-        console.log('Gist ID:', gistId);
-        console.log('Access Token:', accessToken);
-        sessionStorage.setItem('githubUsername', username);
-        sessionStorage.setItem('githubGistId', gistId);
-        sessionStorage.setItem('githubAccessToken', accessToken);
-        setupVideoPlayback();
-    }
-
-    function setupVideoPlayback() {
-        var gistScript = document.createElement('script');
-        gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
-        document.head.appendChild(gistScript);
-
-        function handleNetworkError() {
-            console.log('A network error has occurred. Refreshing video...')
-            video.load();
-            fetch(`https://api.github.com/gists/${gistId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.files[gistFilename]) {
-                        var progressData = JSON.parse(data.files[gistFilename].content);
-                        if (progressData.progress) {
-                            video.currentTime = parseFloat(progressData.progress);
-                        }
-                    }
-                });
-        }
-
-        video.addEventListener('error', function () {
-            if (video.error && video.error.code === 2) {
-                saveProgress();
-                setTimeout(function () {
-                    handleNetworkError();
-                    video.play();
-                }, 3000);
-            }
-        });
-
-        video.addEventListener('timeupdate', function () {
-            if (video.paused && !isVideoPaused) {
-                isVideoPaused = true;
-                saveProgress();
-            }
-        });
-
-        video.addEventListener('play', function () {
-            isVideoPaused = false;
-        });
-
-        fetch(`https://api.github.com/gists/${gistId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.files[gistFilename]) {
-                    var progressData = JSON.parse(data.files[gistFilename].content);
-                    if (progressData.progress) {
-                        video.currentTime = parseFloat(progressData.progress);
-                    }
-                }
-            });
-
-        setInterval(saveProgress, saveInterval);
-    }
-
-    function saveProgress() {
-        var currentTime = new Date().getTime();
-        var timeOnPage = (currentTime - pageLoadTime) / 1000;
-
-        var progressData = {
-            "progress": video.currentTime,
-            "url": window.location.href,
-            "timeOnPage": timeOnPage
-        };
-
-        var gistData = {
-            "files": {
-                [gistFilename]: {
-                    "content": JSON.stringify(progressData, null, 2)
-                }
-            }
-        };
-
-        fetch(`https://api.github.com/gists/${gistId}`, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': 'token ' + `${accessToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(gistData)
-        })
-        .then(response => response.json())
-        .then(data => console.log('Progress saved to Gist:', data))
-        .catch(error => console.error('Error saving progress:', error));
-    }
-
-    window.addEventListener('beforeunload', function () {
-        sessionStorage.removeItem('githubUsername');
-        sessionStorage.removeItem('githubGistId');
-        sessionStorage.removeItem('githubAccessToken');
-    });
+  }
 });
-</script>
+window.player = player;
 
+document.addEventListener("keydown", function (event) {
+  if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") return;
+  if (event.key === " ") { event.preventDefault(); player.paused() ? player.play() : player.pause(); }
+  else if (event.key === "f" || event.key === "F") { player.isFullscreen() ? player.exitFullscreen() : player.requestFullscreen(); }
+  else if (event.key === "ArrowLeft") { player.currentTime(player.currentTime() - 5); }
+  else if (event.key === "ArrowRight") { player.currentTime(player.currentTime() + 5); }
+});
 
+var gistFilename = 'video_progress.json';
+var username = sessionStorage.getItem('githubUsername');
+var gistId = sessionStorage.getItem('githubGistId');
+var accessToken = sessionStorage.getItem('githubAccessToken');
+var lastSavedTime = -1;
 
-<script src="/Series/Playback.js"></script>
-<script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-        videojs('my-video', {
-            plugins: {
-                hotkeys: {
-                    volumeStep: 0.1,
-                    seekStep: 5,
-                    enableModifiersForNumbers: false,
-                    alwaysCaptureHotkeys: true
-                },
-            },
-        });
+function saveProgress(force) {
+  if (!username || !gistId || !accessToken) return;
+  var now = player.currentTime();
+  if (!force && Math.abs(now - lastSavedTime) < 2) return;
+  lastSavedTime = now;
+  var progressData = {
+    "progress": now,
+    "url": window.location.href,
+    "timeOnPage": (Date.now() - (window.__pageLoadTime || Date.now())) / 1000
+  };
+  var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
+  fetch("https://api.github.com/gists/" + gistId, {
+    method: 'PATCH',
+    headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify(gistData)
+  }).then(function(r){ return r.json(); }).then(function(d){ console.log('Progress saved:', d); }).catch(function(e){ console.error('Save error:', e); });
+}
+
+function loadProgress() {
+  if (!username || !gistId || !accessToken) return;
+  fetch("https://api.github.com/gists/" + gistId)
+    .then(function(r){ return r.json(); }).then(function(data) {
+      if (data.files && data.files[gistFilename]) {
+        try {
+          var pd = JSON.parse(data.files[gistFilename].content);
+          if (pd.progress) player.currentTime(parseFloat(pd.progress));
+        } catch(e) {}
+      }
+    }).catch(function(e){ console.error('Load progress error:', e); });
+}
+
+function handleNetworkError() {
+  console.log('Network error, reloading video...');
+  player.load();
+  fetch("https://api.github.com/gists/" + gistId)
+    .then(function(r){ return r.json(); }).then(function(data) {
+      if (data.files && data.files[gistFilename]) {
+        try {
+          var pd = JSON.parse(data.files[gistFilename].content);
+          if (pd.progress) player.currentTime(parseFloat(pd.progress));
+        } catch(e) {}
+      }
+      player.play();
     });
-</script>
-<br>
-<br>
-<a onclick="clearGistProgress()">Click me! if you have watched the episode finished</a>
-</body>
-<body>
-  <br>
-    <br>
-    <a onclick="clearGistProgress()" href="/Series/Teen%20Wolf/S02/2.html">Next Episode</a>
+}
+
+player.on("error", function () {
+  if (player.error() && player.error().code === 2) {
+    saveProgress(true);
+    setTimeout(handleNetworkError, 3000);
+  }
+});
+
+player.on("pause", function () { saveProgress(); });
+player.on("ended", function () { saveProgress(true); });
+player.on("play", function () {});
+
+window.__pageLoadTime = Date.now();
+
+if (username && gistId && accessToken) {
+  loadProgress();
+}
+
+window.addEventListener('beforeunload', function () {
+  saveProgress(true);
+  sessionStorage.removeItem('githubUsername');
+  sessionStorage.removeItem('githubGistId');
+  sessionStorage.removeItem('githubAccessToken');
+});
+
+  </script>
 </body>
 </html>
