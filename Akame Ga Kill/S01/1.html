@@ -35,152 +35,126 @@
     <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen</p>
   </div>
   <script>
-var player = videojs("my-video", {
-  preload: "metadata",
-  playbackRates: [0.5, 1, 1.25, 1.5, 2],
-  fluid: true,
-  plugins: {
-    hotkeys: {
-      volumeStep: 0.1,
-      seekStep: 5,
-      enableModifiersForNumbers: false,
-      alwaysCaptureHotkeys: true,
-      seekModifiers: false
-    }
-  }
-});
-window.player = player;
+var video = document.getElementById('my-video');
+var player = videojs("my-video");
+var spacePressed = false;
+var pageLoadTime = new Date().getTime();
+var saveInterval = 120000;
 
-document.addEventListener("keydown", function (event) {
-  if (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA") return;
-  if (event.key === " ") { event.preventDefault(); player.paused() ? player.play() : player.pause(); }
-  else if (event.key === "f" || event.key === "F") { player.isFullscreen() ? player.exitFullscreen() : player.requestFullscreen(); }
-  else if (event.key === "ArrowLeft") { player.currentTime(player.currentTime() - 5); }
-  else if (event.key === "ArrowRight") { player.currentTime(player.currentTime() + 5); }
-});
-
-var gistFilename = 'video_progress.json';
-var username = sessionStorage.getItem('githubUsername');
-var gistId = sessionStorage.getItem('githubGistId');
-var accessToken = sessionStorage.getItem('githubAccessToken');
-var lastSavedTime = -1;
-
-function saveProgress(force) {
-  if (!username || !gistId || !accessToken) return;
-  var now = player.currentTime();
-  if (!force && Math.abs(now - lastSavedTime) < 2) return;
-  lastSavedTime = now;
-  var progressData = {
-    "progress": now,
-    "url": window.location.href,
-    "timeOnPage": (Date.now() - (window.__pageLoadTime || Date.now())) / 1000
-  };
-  var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
-  fetch("https://api.github.com/gists/" + gistId, {
-    method: 'PATCH',
-    headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(gistData)
-  }).then(function(r){ return r.json(); }).then(function(d){ console.log('Progress saved:', d); }).catch(function(e){ console.error('Save error:', e); });
-}
-
-function loadProgress() {
-  if (!username || !gistId || !accessToken) return;
-  fetch("https://api.github.com/gists/" + gistId)
-    .then(function(r){ return r.json(); }).then(function(data) {
-      if (data.files && data.files[gistFilename]) {
-        try {
-          var pd = JSON.parse(data.files[gistFilename].content);
-          if (pd.progress) player.currentTime(parseFloat(pd.progress));
-        } catch(e) {}
-      }
-    }).catch(function(e){ console.error('Load progress error:', e); });
-}
-
-function handleNetworkError() {
-  console.log('Network error, reloading video...');
-  player.load();
-  fetch("https://api.github.com/gists/" + gistId)
-    .then(function(r){ return r.json(); }).then(function(data) {
-      if (data.files && data.files[gistFilename]) {
-        try {
-          var pd = JSON.parse(data.files[gistFilename].content);
-          if (pd.progress) player.currentTime(parseFloat(pd.progress));
-        } catch(e) {}
-      }
-      player.play();
+document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener("keydown", function (event) {
+        if (event.key === " ") { event.preventDefault(); togglePause(); }
+        if (event.key === "f") { fullscr(); }
+        if (event.key === "ArrowLeft") { seekBackward(); }
+        if (event.key === "ArrowRight") { seekForward(); }
     });
-}
+    function togglePause() { if (player.paused()) player.play(); else player.pause(); }
+    function fullscr() { if (player.isFullscreen()) player.exitFullscreen(); else player.requestFullscreen(); }
+    function seekForward() { player.currentTime(player.currentTime() + 5); }
+    function seekBackward() { player.currentTime(player.currentTime() - 5); }
 
-player.on("error", function () {
-  if (player.error() && player.error().code === 2) {
-    saveProgress(true);
-    setTimeout(handleNetworkError, 3000);
-  }
-});
+    var gistFilename = 'video_progress.json';
+    var isVideoPaused = false;
+    var username = sessionStorage.getItem('githubUsername');
+    var gistId = sessionStorage.getItem('githubGistId');
+    var accessToken = sessionStorage.getItem('githubAccessToken');
 
-player.on("pause", function () { saveProgress(true); });
-player.on("ended", function () { saveProgress(true); });
-player.on("play", function () {});
+    if (!username || !gistId || !accessToken) {
+        if (!document.getElementById('fileInput')) {
+            var fileInput = document.createElement('input');
+            fileInput.id = 'fileInput';
+            fileInput.type = 'file';
+            fileInput.accept = '.txt';
+            fileInput.addEventListener('change', function(event) {
+                var file = event.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) { processFileContent(e.target.result); };
+                    reader.readAsText(file);
+                }
+            });
+            document.body.appendChild(fileInput);
+            var button = document.createElement('button');
+            button.textContent = 'Load GitHub credentials (.txt)';
+            button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
+            button.addEventListener('click', function() { fileInput.click(); });
+            document.body.appendChild(button);
+        }
+    } else {
+        setupVideoPlayback();
+    }
 
-window.__pageLoadTime = Date.now();
-
-if (username && gistId && accessToken) {
-  loadProgress();
-}
-
-window.addEventListener('beforeunload', function () {
-  saveProgress(true);
-  sessionStorage.removeItem('githubUsername');
-  sessionStorage.removeItem('githubGistId');
-  sessionStorage.removeItem('githubAccessToken');
-});
-
-  </script>
-<script src="/Series/assets/js/creds.js"></script>
-<script>
-    document.addEventListener('DOMContentLoaded', function () {
-      if (document.getElementById('credLoadBtn')) return;
-      var username = sessionStorage.getItem('githubUsername');
-      var gistId = sessionStorage.getItem('githubGistId');
-      var accessToken = sessionStorage.getItem('githubAccessToken');
-      if (username && gistId && accessToken) return;
-      var fileInput = document.createElement('input');
-      fileInput.type = 'file';
-      fileInput.accept = '.txt';
-      fileInput.style.display = 'none';
-      var button = document.createElement('button');
-      button.id = 'credLoadBtn';
-      button.textContent = 'Load GitHub credentials (.txt)';
-      button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
-      fileInput.addEventListener('change', function (event) {
-        var file = event.target.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function (e) {
-          var u,g,t;
-          e.target.result.split('\n').forEach(function (line) {
+    function processFileContent(content) {
+        var lines = content.split('\n');
+        lines.forEach(function(line) {
             var parts = line.split('=');
             if (parts.length === 2) {
-              var key = parts[0].trim().toLowerCase();
-              var value = parts[1].trim();
-              if (key === 'username') u = value;
-              else if (key === 'gist id') g = value;
-              else if (key === 'token') t = value;
+                var key = parts[0].trim().toLowerCase();
+                var value = parts[1].trim();
+                if (key === 'username') username = value;
+                else if (key === 'gist id') gistId = value;
+                else if (key === 'token') accessToken = value;
             }
-          });
-          if (u && g && t) {
-            sessionStorage.setItem('githubUsername', u);
-            sessionStorage.setItem('githubGistId', g);
-            sessionStorage.setItem('githubAccessToken', t);
-            location.reload();
-          }
-        };
-        reader.readAsText(file);
-      });
-      button.addEventListener('click', function () { fileInput.click(); });
-      document.body.appendChild(fileInput);
-      document.body.appendChild(button);
+        });
+        sessionStorage.setItem('githubUsername', username);
+        sessionStorage.setItem('githubGistId', gistId);
+        sessionStorage.setItem('githubAccessToken', accessToken);
+        setupVideoPlayback();
+    }
+
+    function setupVideoPlayback() {
+        function handleNetworkError() {
+            video.load();
+            fetch('https://api.github.com/gists/' + gistId)
+                .then(function(r){return r.json();})
+                .then(function(data){
+                    if (data.files && data.files[gistFilename]) {
+                        var progressData = JSON.parse(data.files[gistFilename].content);
+                        if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
+                    }
+                });
+        }
+        video.addEventListener('error', function () {
+            if (video.error && video.error.code === 2) {
+                saveProgress();
+                setTimeout(function(){ handleNetworkError(); video.play(); }, 3000);
+            }
+        });
+        video.addEventListener('timeupdate', function () {
+            if (video.paused && !isVideoPaused) { isVideoPaused = true; saveProgress(); }
+        });
+        video.addEventListener('play', function () { isVideoPaused = false; });
+        fetch('https://api.github.com/gists/' + gistId)
+            .then(function(r){return r.json();})
+            .then(function(data){
+                if (data.files && data.files[gistFilename]) {
+                    var progressData = JSON.parse(data.files[gistFilename].content);
+                    if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
+                }
+            });
+        setInterval(saveProgress, saveInterval);
+    }
+
+    function saveProgress() {
+        var currentTime = new Date().getTime();
+        var timeOnPage = (currentTime - pageLoadTime) / 1000;
+        var progressData = { "progress": video.currentTime, "url": window.location.href, "timeOnPage": timeOnPage };
+        var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
+        fetch('https://api.github.com/gists/' + gistId, {
+            method: 'PATCH',
+            headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify(gistData)
+        }).then(function(r){return r.json();}).then(function(d){console.log('Progress saved:',d);}).catch(function(e){console.error('Save error:',e);});
+    }
+
+    window.addEventListener('beforeunload', function () {
+        sessionStorage.removeItem('githubUsername');
+        sessionStorage.removeItem('githubGistId');
+        sessionStorage.removeItem('githubAccessToken');
     });
-  </script>
+});
+</script>
+
+
 </body>
 </html>
