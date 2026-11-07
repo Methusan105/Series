@@ -32,7 +32,7 @@
       <a href="/Series/Teen%20Wolf/S03/19.html" class="next-episode" onclick="clearGistProgress()">Next Episode &rarr;</a>
       <button class="clear-btn" type="button" onclick="clearGistProgress()">Clear Progress</button>
     </div>
-    <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen</p>
+    <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen &bull; M: Mute &bull; C: Subs &bull; &uarr; &darr;: Volume</p>
   </div>
   <script>
 var video = document.getElementById('my-video');
@@ -47,11 +47,19 @@ document.addEventListener('DOMContentLoaded', function () {
         if (event.key === "f") { fullscr(); }
         if (event.key === "ArrowLeft") { seekBackward(); }
         if (event.key === "ArrowRight") { seekForward(); }
+        if (event.key === "m" || event.key === "M") { toggleMute(); }
+        if (event.key === "c" || event.key === "C") { toggleCaptions(); }
+        if (event.key === "ArrowUp") { volumeUp(); }
+        if (event.key === "ArrowDown") { volumeDown(); }
     });
     function togglePause() { if (player.paused()) player.play(); else player.pause(); }
     function fullscr() { if (player.isFullscreen()) player.exitFullscreen(); else player.requestFullscreen(); }
     function seekForward() { player.currentTime(player.currentTime() + 5); }
     function seekBackward() { player.currentTime(player.currentTime() - 5); }
+    function toggleMute() { player.muted(!player.muted()); }
+    function toggleCaptions() { var tracks = player.textTracks(); for (var i = 0; i < tracks.length; i++) { if (tracks[i].kind === "captions" || tracks[i].kind === "subtitles") { tracks[i].mode = (tracks[i].mode === "showing") ? "hidden" : "showing"; } } }
+    function volumeUp() { player.volume(Math.min(1, player.volume() + 0.1)); }
+    function volumeDown() { player.volume(Math.max(0, player.volume() - 0.1)); }
 
     var gistFilename = 'video_progress.json';
     var isVideoPaused = false;
