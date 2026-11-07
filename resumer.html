@@ -8,13 +8,13 @@
   <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
   <style>
     :root {
-      --bg-1: #0f0c29;
-      --bg-2: #302b63;
-      --bg-3: #24243e;
-      --accent: #ff6a00;
-      --accent-2: #ee0979;
-      --text: #f5f7fa;
-      --muted: #b8c0cc;
+      --bg: #0a0a0a;
+      --panel: #141414;
+      --accent: #e50914;
+      --accent-hover: #f40612;
+      --text: #e5e5e5;
+      --muted: #a5a5a5;
+      --border: #333;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -22,151 +22,141 @@
       padding: 0;
       height: 100%;
       overflow: hidden;
-      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
       color: var(--text);
-    }
-    body {
-      background: linear-gradient(135deg, var(--bg-1), var(--bg-2), var(--bg-3));
-      background-size: 400% 400%;
-      animation: gradientShift 12s ease infinite;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;
       position: relative;
     }
-    @keyframes gradientShift {
-      0% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-    .bg-orb {
+    body::before {
+      content: "";
       position: absolute;
-      border-radius: 50%;
-      filter: blur(60px);
-      opacity: 0.5;
-      animation: float 8s ease-in-out infinite;
+      inset: 0;
+      background: radial-gradient(600px circle at var(--mx, 50%) var(--my, 50%), rgba(229, 9, 20, 0.15), transparent 40%);
       pointer-events: none;
+      z-index: 0;
     }
-    .bg-orb.o1 { width: 320px; height: 320px; background: var(--accent); top: -80px; left: -80px; }
-    .bg-orb.o2 { width: 280px; height: 280px; background: var(--accent-2); bottom: -60px; right: -60px; animation-delay: 2s; }
-    .bg-orb.o3 { width: 200px; height: 200px; background: #00c6ff; top: 40%; left: 60%; animation-delay: 4s; }
-    @keyframes float {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      50% { transform: translate(30px, -40px) scale(1.1); }
+    body {
+      z-index: 1;
     }
     .card {
       position: relative;
       z-index: 2;
       width: min(420px, 90vw);
       padding: 48px 40px;
-      border-radius: 24px;
-      background: rgba(255, 255, 255, 0.08);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+      border-radius: 20px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
       text-align: center;
-      animation: cardIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+      animation: cardIn 0.5s ease;
     }
     @keyframes cardIn {
-      from { opacity: 0; transform: translateY(30px) scale(0.95); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .logo {
       width: 72px;
       height: 72px;
-      margin: 0 auto 24px;
-      border-radius: 20px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      margin: 0 auto 20px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--accent), rgba(229, 9, 20, 0.55));
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 34px;
-      box-shadow: 0 8px 24px rgba(238, 9, 121, 0.4);
-      animation: pulse 2s ease-in-out infinite;
+      color: #fff;
+      box-shadow: 0 0 30px rgba(229, 9, 20, 0.4);
     }
-    @keyframes pulse {
-      0%, 100% { transform: scale(1); box-shadow: 0 8px 24px rgba(238, 9, 121, 0.4); }
-      50% { transform: scale(1.06); box-shadow: 0 12px 32px rgba(238, 9, 121, 0.6); }
+    .logo svg {
+      width: 34px;
+      height: 34px;
+      display: block;
     }
     h1 {
-      margin: 0 0 8px;
-      font-size: 28px;
-      font-weight: 700;
+      margin: 0 0 6px;
+      font-size: 30px;
+      font-weight: 900;
       letter-spacing: -0.5px;
-      background: linear-gradient(90deg, #fff, #ffd1e3);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
+      color: #fff;
     }
     .subtitle {
       color: var(--muted);
-      font-size: 14px;
+      font-size: 15px;
       margin-bottom: 32px;
     }
     .spinner {
-      width: 48px;
-      height: 48px;
-      margin: 0 auto 20px;
-      border: 3px solid rgba(255,255,255,0.15);
+      width: 40px;
+      height: 40px;
+      margin: 0 auto 16px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
       border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.9s linear infinite;
+      animation: spin 0.8s linear infinite;
+      display: none;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .status {
       font-size: 13px;
       color: var(--muted);
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
+      margin-bottom: 26px;
+      min-height: 20px;
     }
     .dots::after {
-      content: '';
+      content: "";
       animation: dots 1.4s steps(4, end) infinite;
     }
     @keyframes dots {
-      0% { content: ''; }
-      25% { content: '.'; }
-      50% { content: '..'; }
-      75% { content: '...'; }
+      0% { content: ""; }
+      25% { content: "."; }
+      50% { content: ".."; }
+      75% { content: "..."; }
     }
-    #fileInput, #credBtn { display: none; }
+    #fileInput { display: none; }
     .btn {
-      margin-top: 24px;
-      padding: 12px 28px;
+      width: 100%;
+      margin-top: 8px;
+      padding: 12px;
       border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-radius: 4px;
+      background: var(--accent);
       color: #fff;
-      font-weight: 600;
-      font-size: 14px;
+      font-weight: 700;
+      font-size: 15px;
       cursor: pointer;
-      box-shadow: 0 6px 20px rgba(238, 9, 121, 0.35);
-      transition: transform 0.2s, box-shadow 0.2s;
+      transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
     }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(238, 9, 121, 0.5); }
+    .btn:hover {
+      background: var(--accent-hover);
+      box-shadow: 0 0 18px rgba(229, 9, 20, 0.7), 0 0 36px rgba(229, 9, 20, 0.35);
+      transform: translateY(-1px);
+    }
     .credit {
       position: absolute;
-      bottom: 16px;
+      bottom: 18px;
       left: 0; right: 0;
       text-align: center;
       font-size: 11px;
-      color: rgba(255,255,255,0.4);
+      color: rgba(255, 255, 255, 0.35);
       z-index: 2;
     }
   </style>
 </head>
 <body>
-  <div class="bg-orb o1"></div>
-  <div class="bg-orb o2"></div>
-  <div class="bg-orb o3"></div>
-
   <div class="card">
-    <div class="logo">▶</div>
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="6,4 20,12 6,20" fill="currentColor" stroke="none"/>
+        <path d="M4 4v16" stroke="currentColor" stroke-width="2.5"/>
+      </svg>
+    </div>
     <h1>Resumer</h1>
     <p class="subtitle">Restoring your playback progress</p>
-    <div class="spinner" id="spinner" style="display:none"></div>
+    <div class="spinner" id="spinner"></div>
     <p class="status" id="status">Waiting for credentials<span class="dots"></span></p>
-    <button id="credBtn" class="btn">Choose credentials file</button>
+    <button id="credBtn" class="btn" style="display:none">Choose credentials file</button>
     <input id="fileInput" type="file" accept=".txt" />
   </div>
 
@@ -208,7 +198,7 @@
           setupGistScript();
         }
         if (credBtn) {
-          credBtn.style.display = 'inline-block';
+          credBtn.style.display = 'block';
           showIdle();
           credBtn.addEventListener('click', function () {
             fileInput.click();

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supernatural &gt; S10 &gt; 1</title>
+  <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+  <script src="/Series/Playback.js"></script>
+  <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+  <link rel="stylesheet" href="/Series/assets/css/player.css" />
+</head>
+<body>
+  <div class="video-container">
+    <video
+      id="my-video"
+      class="video-js vjs-fluid"
+      controls
+      preload="metadata"
+      playsinline
+      poster="MY_VIDEO_POSTER.jpg"
+    >
+      <source src="https://github.com/Methusan105/Series/releases/download/SN10/Supernatural.S10E01.mp4" type="video/mp4" />
+      <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Supernatural/S10/Subs/Supernatural.S10E01.vtt" srclang="en" label="English" default>
+      <p class="vjs-no-js">
+        To view this video please enable JavaScript, and consider upgrading to a
+        web browser that
+        <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+      </p>
+    </video>
+    <div class="player-footer">
+      <a href="/Series/Supernatural/S10/2.html" class="next-episode" onclick="clearGistProgress()">Next Episode &rarr;</a>
+      <button class="clear-btn" type="button" onclick="clearGistProgress()">Clear Progress</button>
+    </div>
+    <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen &bull; M: Mute &bull; C: Subs &bull; &uarr; &darr;: Volume</p>
+  </div>
+  <script>
+var video = document.getElementById('my-video');
+var player = videojs("my-video");
+var spacePressed = false;
+var pageLoadTime = new Date().getTime();
+var saveInterval = 120000;
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener("keydown", function (event) {
+        if (event.key === " ") { event.preventDefault(); togglePause(); }
+        if (event.key === "f") { fullscr(); }
+        if (event.key === "ArrowLeft") { seekBackward(); }
+        if (event.key === "ArrowRight") { seekForward(); }
+        if (event.key === "m" || event.key === "M") { toggleMute(); }
+        if (event.key === "c" || event.key === "C") { toggleCaptions(); }
+        if (event.key === "ArrowUp") { volumeUp(); }
+        if (event.key === "ArrowDown") { volumeDown(); }
+    });
+    function togglePause() { if (player.paused()) player.play(); else player.pause(); }
+    function fullscr() { if (player.isFullscreen()) player.exitFullscreen(); else player.requestFullscreen(); }
+    function seekForward() { player.currentTime(player.currentTime() + 5); }
+    function seekBackward() { player.currentTime(player.currentTime() - 5); }
+    function toggleMute() { player.muted(!player.muted()); }
+    function toggleCaptions() { var tracks = player.textTracks(); for (var i = 0; i < tracks.length; i++) { if (tracks[i].kind === "captions" || tracks[i].kind === "subtitles") { tracks[i].mode = (tracks[i].mode === "showing") ? "hidden" : "showing"; } } }
+    function volumeUp() { player.volume(Math.min(1, player.volume() + 0.1)); }
+    function volumeDown() { player.volume(Math.max(0, player.volume() - 0.1)); }
+
+    var gistFilename = 'video_progress.json';
+    var isVideoPaused = false;
+    var username = sessionStorage.getItem('githubUsername');
+    var gistId = sessionStorage.getItem('githubGistId');
+    var accessToken = sessionStorage.getItem('githubAccessToken');
+
+    if (!username || !gistId || !accessToken) {
+        if (!document.getElementById('fileInput') && !document.getElementById('credBtn')) {
+            var fileInput = document.createElement('input');
+            fileInput.id = 'fileInput';
+            fileInput.type = 'file';
+            fileInput.accept = '.txt';
+            fileInput.style.display = 'none';
+            fileInput.addEventListener('change', function(event) {
+                var file = event.target.files[0];
+                if (file) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) { processFileContent(e.target.result); };
+                    reader.readAsText(file);
+                }
+            });
+            document.body.appendChild(fileInput);
+            var button = document.createElement('button');
+            button.textContent = 'Load GitHub credentials (.txt)';
+            button.id = 'credBtn';
+            button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
+            button.addEventListener('click', function() { fileInput.click(); });
+            document.body.appendChild(button);
+        }
+    } else {
+        setupVideoPlayback();
+    }
+
+    function processFileContent(content) {
+        var lines = content.split('\n');
+        lines.forEach(function(line) {
+            var parts = line.split('=');
+            if (parts.length === 2) {
+                var key = parts[0].trim().toLowerCase();
+                var value = parts[1].trim();
+                if (key === 'username') username = value;
+                else if (key === 'gist id') gistId = value;
+                else if (key === 'token') accessToken = value;
+            }
+        });
+        sessionStorage.setItem('githubUsername', username);
+        sessionStorage.setItem('githubGistId', gistId);
+        sessionStorage.setItem('githubAccessToken', accessToken);
+        setupVideoPlayback();
+    }
+
+    function setupVideoPlayback() {
+        function handleNetworkError() {
+            video.load();
+            fetch('https://api.github.com/gists/' + gistId)
+                .then(function(r){return r.json();})
+                .then(function(data){
+                    if (data.files && data.files[gistFilename]) {
+                        var progressData = JSON.parse(data.files[gistFilename].content);
+                        if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
+                    }
+                });
+        }
+        video.addEventListener('error', function () {
+            if (video.error && video.error.code === 2) {
+                saveProgress();
+                setTimeout(function(){ handleNetworkError(); video.play(); }, 3000);
+            }
+        });
+        video.addEventListener('timeupdate', function () {
+            if (video.paused && !isVideoPaused) { isVideoPaused = true; saveProgress(); }
+        });
+        video.addEventListener('play', function () { isVideoPaused = false; });
+        fetch('https://api.github.com/gists/' + gistId)
+            .then(function(r){return r.json();})
+            .then(function(data){
+                if (data.files && data.files[gistFilename]) {
+                    var progressData = JSON.parse(data.files[gistFilename].content);
+                    if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
+                }
+            });
+        setInterval(saveProgress, saveInterval);
+    }
+
+    function saveProgress() {
+        var currentTime = new Date().getTime();
+        var timeOnPage = (currentTime - pageLoadTime) / 1000;
+        var progressData = { "progress": video.currentTime, "url": window.location.href, "timeOnPage": timeOnPage };
+        var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
+        fetch('https://api.github.com/gists/' + gistId, {
+            method: 'PATCH',
+            headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify(gistData)
+        }).then(function(r){return r.json();}).then(function(d){console.log('Progress saved:',d);}).catch(function(e){console.error('Save error:',e);});
+    }
+
+    window.addEventListener('beforeunload', function () {
+        sessionStorage.removeItem('githubUsername');
+        sessionStorage.removeItem('githubGistId');
+        sessionStorage.removeItem('githubAccessToken');
+    });
+});
+</script>
+
+</body>
+</html>
