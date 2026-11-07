@@ -136,5 +136,51 @@ window.addEventListener('beforeunload', function () {
 });
 
   </script>
+<script src="/Series/assets/js/creds.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+      if (document.getElementById('credLoadBtn')) return;
+      var username = sessionStorage.getItem('githubUsername');
+      var gistId = sessionStorage.getItem('githubGistId');
+      var accessToken = sessionStorage.getItem('githubAccessToken');
+      if (username && gistId && accessToken) return;
+      var fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.txt';
+      fileInput.style.display = 'none';
+      var button = document.createElement('button');
+      button.id = 'credLoadBtn';
+      button.textContent = 'Load GitHub credentials (.txt)';
+      button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
+      fileInput.addEventListener('change', function (event) {
+        var file = event.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var u,g,t;
+          e.target.result.split('\n').forEach(function (line) {
+            var parts = line.split('=');
+            if (parts.length === 2) {
+              var key = parts[0].trim().toLowerCase();
+              var value = parts[1].trim();
+              if (key === 'username') u = value;
+              else if (key === 'gist id') g = value;
+              else if (key === 'token') t = value;
+            }
+          });
+          if (u && g && t) {
+            sessionStorage.setItem('githubUsername', u);
+            sessionStorage.setItem('githubGistId', g);
+            sessionStorage.setItem('githubAccessToken', t);
+            location.reload();
+          }
+        };
+        reader.readAsText(file);
+      });
+      button.addEventListener('click', function () { fileInput.click(); });
+      document.body.appendChild(fileInput);
+      document.body.appendChild(button);
+    });
+  </script>
 </body>
 </html>
