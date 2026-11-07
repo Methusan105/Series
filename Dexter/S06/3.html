@@ -60,11 +60,12 @@ document.addEventListener('DOMContentLoaded', function () {
     var accessToken = sessionStorage.getItem('githubAccessToken');
 
     if (!username || !gistId || !accessToken) {
-        if (!document.getElementById('fileInput')) {
+        if (!document.getElementById('fileInput') && !document.getElementById('credBtn')) {
             var fileInput = document.createElement('input');
             fileInput.id = 'fileInput';
             fileInput.type = 'file';
             fileInput.accept = '.txt';
+            fileInput.style.display = 'none';
             fileInput.addEventListener('change', function(event) {
                 var file = event.target.files[0];
                 if (file) {
@@ -76,6 +77,7 @@ document.addEventListener('DOMContentLoaded', function () {
             document.body.appendChild(fileInput);
             var button = document.createElement('button');
             button.textContent = 'Load GitHub credentials (.txt)';
+            button.id = 'credBtn';
             button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
             button.addEventListener('click', function() { fileInput.click(); });
             document.body.appendChild(button);

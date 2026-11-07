@@ -28,7 +28,7 @@
                 sessionStorage.setItem('githubAccessToken', accessToken);
                 setupGistScript();
             }
-        if (!document.getElementById('fileInput')) {
+        if (!document.getElementById('fileInput') && !document.getElementById('credBtn')) {
           var fileInput = createFileInput();
           document.body.appendChild(fileInput);
           button.addEventListener('click', function () {
