@@ -1,4 +1,4 @@
-name: Konverter Enkel Pulje
+name: Konverter Enkel Pulje (Maks 2GB)
 
 on:
   workflow_dispatch:
@@ -29,12 +29,12 @@ on:
         description: 'Container'
         required: true
         default: '.mp4'
-        type: string
-      crf:
-        description: 'CRF'
-        required: true
-        default: '28'
-        type: string
+        type: choice
+        options:
+          - '.mp4'
+          - '.mkv'
+          - '.webm'
+          - '.mov'
 
 permissions:
   contents: write
@@ -54,7 +54,6 @@ jobs:
           START: ${{ inputs.start_index }}
           END: ${{ inputs.end_index }}
         run: |
-          # Henter alle videofiler, sorterer dem, og kutter ut det aktuelle intervallet med -c (kompakt JSON)
           ASSETS_JSON=$(gh release view "$TAG" --repo "$REPO" --json assets --jq "[.assets[].name | select(test(\"\\\\.(mp4|mkv|mov|avi|webm)$\"; \"i\"))] | sort | .[$START:$END]" | jq -c '.')
           echo "Valgte filer for denne puljen: $ASSETS_JSON"
           echo "matrix=$ASSETS_JSON" >> $GITHUB_OUTPUT
@@ -63,7 +62,7 @@ jobs:
     needs: get-assets
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 4  # Kjører 4 filer i parallell innenfor denne puljen!
+      max-parallel: 4
       matrix:
         asset_name: ${{ fromJson(needs.get-assets.outputs.matrix) }}
     steps:
@@ -77,10 +76,10 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      - name: Installer FFmpeg
+      - name: Installer FFmpeg og Python-avhengigheter
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg python3-ffprobe
 
       - name: Opprett mapper
         run: mkdir -p input_files output_files
@@ -94,7 +93,7 @@ jobs:
           echo "Laster ned: ${{ matrix.asset_name }}"
           gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
 
-      - name: Konverter filen
+      - name: Konverter til maksimal kvalitet under 2GB (2-pass)
         run: |
           case "${{ inputs.video_format }}" in
             "HEVC (H.265)") VCODEC="libx265" ;;
@@ -116,10 +115,44 @@ jobs:
           FILE="input_files/$ASSET"
           OUT_FILE="output_files/${BASENAME}${EXT}"
 
-          echo "Konverterer $FILE til $OUT_FILE..."
-          ffmpeg -i "$FILE" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "$OUT_FILE"
+          echo "Analyserer varighet for $FILE..."
+
+          # Bruker Python til å hente nøyaktig varighet i sekunder ved hjelp av ffprobe
+          DURATION=$(python3 -c "
+          import subprocess, json
+          result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '$FILE'], capture_output=True, text=True)
+          data = json.loads(result.stdout)
+          print(float(data['format']['duration']))
+          ")
+
+          echo "Filens varighet: $DURATION sekunder"
+
+          # Vi sikter på 1.9 GB for å ha litt margin til overhead (ca. 16.300 megabit totalt)
+          # Formel for bitrate (bits per sekund) = (Mål-størrelse i bytes * 8) / varighet
+          # 1.9 GB = 1.9 * 1024 * 1024 * 1024 bytes = 2,039,634,329 bytes
+          TARGET_BITS=$(python3 -c "print(int((1.9 * 1024 * 1024 * 1024 * 8) / $DURATION))")
           
-          test -s "$OUT_FILE" && echo "Konvertering vellykket!"
+          # Om det er lyd som kopieres, trekker vi fra litt plass til lyden hvis den skal omkodes, 
+          # men hvis lyden kopieres (copy), kan nesten alt gå til videoen.
+          # Vi setter en fornuftig grense på videobitrate:
+          VIDEO_BITRATE=$TARGET_BITS
+          
+          echo "Beregnet optimal videobitrate for å treffe < 2GB: $VIDEO_BITRATE bps"
+
+          echo "Starter Pass 1..."
+          ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 1 -an -f null /dev/null
+
+          echo "Starter Pass 2 (fullfører konvertering)..."
+          if [ "$ACODEC" = "copy" ]; then
+            ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
+          else
+            ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+          fi
+
+          # Rydder opp etter pass-loggfiler
+          rm -f ffmpeg2pass-0.log ffmpeg2pass-0.log.mbtree
+
+          test -s "$OUT_FILE" && echo "Konvertering vellykket! Sjekk filstørrelse under 2GB."
 
       - name: Last opp konvertert fil tilbake til releasen
         env:
