@@ -1,4 +1,4 @@
-name: Konverter Release Medier (Smart Pulje-valg)
+name: Konverter Release Medier (Automatiske Puljer)
 
 on:
   workflow_dispatch:
@@ -6,24 +6,6 @@ on:
       release_tag:
         description: 'Release Tag (f.eks. v1.0.0)'
         required: true
-        type: string
-      use_batching:
-        description: 'Vil du dele opp i puljer (intervaller)? (Velg false hvis <= 20 filer)'
-        required: true
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-      start_index:
-        description: 'Start-indeks (hvis puljer er true, f.eks. 0)'
-        required: true
-        default: '0'
-        type: string
-      end_index:
-        description: 'Slutt-indeks (hvis puljer er true, f.eks. 20)'
-        required: true
-        default: '20'
         type: string
       video_format:
         description: 'Velg videoformat/kodek'
@@ -64,43 +46,64 @@ permissions:
   contents: write
 
 jobs:
-  get-assets:
+  # Jobb 1: Genererer automatisk puljene (f.eks. 0-20, 20-41, 41-62...) basert på hvor mange filer det er
+  generate-batches:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      batch_matrix: ${{ steps.set-batches.outputs.batch_matrix }}
     steps:
-      - name: Hent og filtrer assets basert på valg
-        id: set-matrix
+      - name: Lag bolker/intervaller
+        id: set-batches
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
-          USE_BATCH: ${{ inputs.use_batching }}
-          START: ${{ inputs.start_index }}
-          END: ${{ inputs.end_index }}
         run: |
-          # Bruker -c (compact) for å unngå linjeskift og feil med anførselstegn
-          ALL_ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | sort')
+          # Hent antall videofiler
+          TOTAL_COUNT=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | length')
+          echo "Totalt antall videofiler: $TOTAL_COUNT"
+
+          # Lag JSON-matrise med intervaller på ca. 21 filer (0-20, 20-41, 41-62 osv.)
+          # Python brukes her for å generere en pen JSON-liste med start og end
+          python3 -c '
+          import json
+          total = int("'$TOTAL_COUNT'")
+          chunk_size = 21
+          batches = []
           
-          TOTAL_COUNT=$(echo "$ALL_ASSETS" | jq length)
-          echo "Totalt antall videofiler funnet i releasen: $TOTAL_COUNT"
+          start = 0
+          while start < total:
+              end = min(start + chunk_size, total)
+              batches.append({"start": start, "end": end})
+              start = end
+              
+          print(json.dumps(batches))
+          '
+          
+          BATCHES_JSON=$(python3 -c '
+          import json
+          total = int("'$TOTAL_COUNT'")
+          chunk_size = 21
+          batches = []
+          start = 0
+          while start < total:
+              end = min(start + chunk_size, total)
+              batches.append({"start": start, "end": end})
+              start = end
+          print(json.dumps(batches))
+          ')
 
-          if [ "$USE_BATCH" = "false" ] || [ "$TOTAL_COUNT" -le 20 ]; then
-            ASSETS_JSON=$(echo "$ALL_ASSETS" | jq -c '.')
-          else
-            ASSETS_JSON=$(echo "$ALL_ASSETS" | jq -c ".[$START:$END]")
-          fi
+          echo "Genererte puljer: $BATCHES_JSON"
+          echo "batch_matrix=$BATCHES_JSON" >> $GITHUB_OUTPUT
 
-          echo "Valgte filer (JSON): $ASSETS_JSON"
-          echo "matrix=$ASSETS_JSON" >> $GITHUB_OUTPUT
-
-  convert-asset:
-    needs: get-assets
+  # Jobb 2: Kjører alle puljene i PARALLELL (eller så mange GitHub tillater samtidig)
+  convert-batch:
+    needs: generate-batches
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 4
+      max-parallel: 4  # Hvor mange puljer som kjører samtidig
       matrix:
-        asset_name: ${{ fromJson(needs.get-assets.outputs.matrix) }}
+        batch: ${{ fromJson(needs.generate-batches.outputs.batch_matrix) }}
     steps:
       - name: Sjekk ut kodelager
         uses: actions/checkout@v4
@@ -120,16 +123,25 @@ jobs:
       - name: Opprett mapper
         run: mkdir -p input_files output_files
 
-      - name: Last ned denne filen
+      - name: Last ned filer for denne puljen (${{ matrix.batch.start }} til ${{ matrix.batch.end }})
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
+          START: ${{ matrix.batch.start }}
+          END: ${{ matrix.batch.end }}
         run: |
-          echo "Laster ned: ${{ matrix.asset_name }}"
-          gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
+          echo "Henter filer fra indeks $START til $END..."
+          
+          # Henter kun filene som tilhører denne spesifikke puljen
+          FILES_TO_DOWNLOAD=$(gh release view "$TAG" --repo "$REPO" --json assets --jq "[.assets[].name | select(test(\"\\\\.(mp4|mkv|mov|avi|webm)$\"; \"i\"))] | sort | .[$START:$END][]")
+          
+          for filename in $FILES_TO_DOWNLOAD; do
+            echo "Laster ned: $filename"
+            gh release download "$TAG" --pattern "$filename" --dir input_files --repo "$REPO"
+          done
 
-      - name: Konverter filen
+      - name: Konverter filene i denne puljen
         run: |
           case "${{ inputs.video_format }}" in
             "HEVC (H.265)") VCODEC="libx265" ;;
@@ -144,28 +156,28 @@ jobs:
             "AC3")                         ACODEC="ac3" ;;
           esac
 
-          ASSET="${{ matrix.asset_name }}"
-          BASENAME="${ASSET%.*}"
           EXT="${{ inputs.output_container }}"
-          
-          FILE="input_files/$ASSET"
-          OUT_FILE="output_files/${BASENAME}${EXT}"
 
-          echo "Konverterer $FILE til $OUT_FILE..."
-          ffmpeg -i "$FILE" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "$OUT_FILE"
-          
-          test -s "$OUT_FILE" && echo "Konvertering vellykket!"
+          for file in input_files/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              basename_no_ext="${filename%.*}"
+              
+              OUT_FILE="output_files/${basename_no_ext}${EXT}"
+              echo "Konverterer $filename til $OUT_FILE..."
+              
+              ffmpeg -i "$file" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "$OUT_FILE"
+              
+              # Slett originalen etter hvert som den blir ferdig for å spare plass
+              rm -f "$file"
+            fi
+          done
 
-      - name: Last opp konvertert fil tilbake til releasen
+      - name: Last opp konverterte filer tilbake til releasen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
-          ASSET="${{ matrix.asset_name }}"
-          BASENAME="${ASSET%.*}"
-          EXT="${{ inputs.output_container }}"
-          OUT_FILE="output_files/${BASENAME}${EXT}"
-
-          echo "Laster opp $OUT_FILE til release $TAG..."
-          gh release upload "$TAG" "$OUT_FILE" --clobber --repo "$REPO"
+          echo "Laster opp ferdige filer fra denne puljen til release $TAG..."
+          gh release upload "$TAG" output_files/* --clobber --repo "$REPO"
