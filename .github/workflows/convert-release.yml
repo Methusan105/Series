@@ -26,6 +26,16 @@ on:
           - 'AAC'
           - 'Opus'
           - 'AC3'
+      output_container:
+        description: 'Velg filformat (container)'
+        required: true
+        default: '.mp4'
+        type: choice
+        options:
+          - '.mp4'
+          - '.mkv'
+          - '.webm'
+          - '.mov'
       crf:
         description: 'Kvalitet/CRF (Lavere tall = bedre kvalitet, f.eks. 28 for HEVC)'
         required: true
@@ -75,28 +85,29 @@ jobs:
             "AC3")                         ACODEC="ac3" ;;
           esac
 
-          echo "Konverterer med Video: $VCODEC | Audio: $ACODEC | CRF: ${{ inputs.crf }}"
+          EXT="${{ inputs.output_container }}"
+          echo "Konverterer til Container: $EXT | Video: $VCODEC | Audio: $ACODEC | CRF: ${{ inputs.crf }}"
 
           for file in input_files/*; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
+              basename_no_ext="${filename%.*}"
               extension="${filename##*.}"
               
               if [[ "$extension" =~ ^(mp4|mkv|mov|avi|webm)$ ]]; then
-                echo "Behandler: $filename"
-                ffmpeg -i "$file" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "output_files/$filename"
+                echo "Behandler: $filename -> ${basename_no_ext}${EXT}"
+                ffmpeg -i "$file" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "output_files/${basename_no_ext}${EXT}"
               else
                 echo "Hopper over ikke-videofil: $filename"
               fi
             fi
           done
 
-      - name: Last opp de konverterte filene tilbake til sammme release
+      - name: Last opp de konverterte filene tilbake til samme release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
           echo "Laster opp konverterte filer til release $TAG..."
-          # --clobber sørger for å overskrive eksisterende filer med samme navn på releasen
           gh release upload "$TAG" output_files/* --clobber --repo "$REPO"
