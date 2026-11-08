@@ -1,4 +1,4 @@
-name: Konverter Enkel Pulje (Maks 2GB)
+name: Konverter Enkel Pulje (Maks 2GB med Map & Smart Bitrate)
 
 on:
   workflow_dispatch:
@@ -45,6 +45,11 @@ on:
           - '.mkv'
           - '.webm'
           - '.mov'
+      ffmpeg_maps:
+        description: 'Ekstra FFmpeg map-argumenter (f.eks. -map 0:v:0 -map 0:a:0 eller bare la stå tom for alt)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -86,7 +91,7 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      - name: Installer FFmpeg og Python-avhengigheter
+      - name: Installer FFmpeg
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
@@ -103,7 +108,7 @@ jobs:
           echo "Laster ned: ${{ matrix.asset_name }}"
           gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
 
-      - name: Konverter eller kopier med maks 2GB grense
+      - name: Konverter med smart 2GB-grense og tilpasset Map
         run: |
           case "${{ inputs.video_format }}" in
             "HEVC (H.265)") VCODEC="libx265" ;;
@@ -126,39 +131,82 @@ jobs:
           FILE="input_files/$ASSET"
           OUT_FILE="output_files/${BASENAME}${EXT}"
 
-          # Hvis både video og lyd skal kopieres (copy), trenger vi ikke 2-pass eller kompleks konvertering
-          if [ "$VCODEC" = "copy" ] && [ "$ACODEC" = "copy" ]; then
-            echo "Både video og lyd er satt til copy. Kopierer filen direkte..."
-            ffmpeg -y -i "$FILE" -c copy "$OUT_FILE"
+          # Hent brukerens egne map-argumenter hvis de er oppgitt
+          MAP_ARGS="${{ inputs.ffmpeg_maps }}"
+
+          echo "Analyserer metadata for $FILE med ffprobe..."
+          
+          # Henter både varighet og kildens totale bitrate via Python/ffprobe
+          PROBE_DATA=$(python3 -c "
+          import subprocess, json
+          result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '$FILE'], capture_output=True, text=True)
+          data = json.loads(result.stdout)
+          format_info = data.get('format', {})
+          duration = float(format_info.get('duration', 0))
+          bit_rate = int(format_info.get('bit_rate', 0)) if 'bit_rate' in format_info else 0
+          print(f'{duration},{bit_rate}')
+          ")
+
+          DURATION=$(echo "$PROBE_DATA" | cut -d',' -f1)
+          SOURCE_BITRATE=$(echo "$PROBE_DATA" | cut -d',' -f2)
+
+          echo "Filens varighet: $DURATION sekunder"
+          echo "Kildens opprinnelige bitrate: $SOURCE_BITRATE bps"
+
+          # Beregn maks bitrate for å treffe 1.9 GB
+          TARGET_BITS=$(python3 -c "print(int((1.9 * 1024 * 1024 * 1024 * 8) / $DURATION))")
+
+          # Smart logikk: Aldri bruk høyere bitrate enn kilden (med mindre kilden er ukjent/null, eller du eksplisitt vil presse den)
+          # Hvis kildens bitrate er lavere enn 2GB-grensen, beholder vi kildens bitrate (eller lar den kopieres)
+          if [ "$SOURCE_BITRATE" -gt 0 ] && [ "$SOURCE_BITRATE" -lt "$TARGET_BITS" ]; then
+              echo "Kildens bitrate er lavere enn 2GB-grensen. Bruker kildens bitrate for å unngå å sløse plass."
+              FINAL_VIDEO_BITRATE="$SOURCE_BITRATE"
           else
-            echo "Analyserer varighet for $FILE..."
-            DURATION=$(python3 -c "
-            import subprocess, json
-            result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '$FILE'], capture_output=True, text=True)
-            data = json.loads(result.stdout)
-            print(float(data['format']['duration']))
-            ")
+              FINAL_VIDEO_BITRATE="$TARGET_BITS"
+          fi
 
-            echo "Filens varighet: $DURATION sekunder"
-            TARGET_BITS=$(python3 -c "print(int((1.9 * 1024 * 1024 * 1024 * 8) / $DURATION))")
-            VIDEO_BITRATE=$TARGET_BITS
+          echo "Valgt videobitrate for konvertering: $FINAL_VIDEO_BITRATE bps"
 
-            if [ "$VCODEC" = "copy" ]; then
-              echo "Video kopieres direkte (copy), lyd omkodes..."
-              ffmpeg -y -i "$FILE" -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
-            else
-              echo "Starter Pass 1 (video omkodes til 2GB maks)..."
-              ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 1 -an -f null /dev/null
-
-              echo "Starter Pass 2 (fullfører konvertering)..."
-              if [ "$ACODEC" = "copy" ]; then
-                ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
+          # Bygg opp kommandoen basert på om vi kopierer eller omkoder
+          if [ "$VCODEC" = "copy" ] && [ "$ACODEC" = "copy" ]; then
+              echo "Kopierer både video og lyd direkte..."
+              if [ -n "$MAP_ARGS" ]; then
+                  ffmpeg -y -i "$FILE" $MAP_ARGS -c copy "$OUT_FILE"
               else
-                ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+                  ffmpeg -y -i "$FILE" -c copy "$OUT_FILE"
+              fi
+          elif [ "$VCODEC" = "copy" ]; then
+              echo "Kopierer video direkte, omkoder lyd..."
+              if [ -n "$MAP_ARGS" ]; then
+                  ffmpeg -y -i "$FILE" $MAP_ARGS -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+              else
+                  ffmpeg -y -i "$FILE" -i "$FILE" -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+              fi
+          else
+              # 2-pass omkodning av video
+              echo "Starter Pass 1..."
+              if [ -n "$MAP_ARGS" ]; then
+                  ffmpeg -y -i "$FILE" $MAP_ARGS -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 1 -an -f null /dev/null
+              else
+                  ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 1 -an -f null /dev/null
+              fi
+
+              echo "Starter Pass 2..."
+              if [ "$ACODEC" = "copy" ]; then
+                  if [ -n "$MAP_ARGS" ]; then
+                      ffmpeg -y -i "$FILE" $MAP_ARGS -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
+                  else
+                      ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
+                  fi
+              else
+                  if [ -n "$MAP_ARGS" ]; then
+                      ffmpeg -y -i "$FILE" $MAP_ARGS -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+                  else
+                      ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+                  fi
               fi
 
               rm -f ffmpeg2pass-0.log ffmpeg2pass-0.log.mbtree
-            fi
           fi
 
           test -s "$OUT_FILE" && echo "Konvertering vellykket!"
