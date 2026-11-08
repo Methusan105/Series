@@ -64,31 +64,40 @@ jobs:
           TOTAL_COUNT=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | length')
           echo "Totalt antall filer: $TOTAL_COUNT"
 
-          # 2. Del opp automatisk i bolker på 21 filer helt til alle er dekket
-          python3 -c '
-          import os, json, subprocess
+          # 2. Bruker et Python-skript uten f-string komplikasjoner for API-kallene
+          python3 - << 'EOF'
+          import os, subprocess
+
           total = int(os.environ["TOTAL_COUNT"])
+          repo = os.environ["REPO"]
+          tag = os.environ["TAG"]
+          v_fmt = os.environ["V_FMT"]
+          a_fmt = os.environ["A_FMT"]
+          container = os.environ["CONTAINER"]
+          crf = os.environ["CRF"]
+
           chunk_size = 21
-          
           start = 0
+
           while start < total:
               end = min(start + chunk_size, total)
               print(f"Trigget pulje: {start} til {end}")
               
+              api_url = f"repos/{repo}/actions/workflows/convert-release.yml/dispatches"
+              
               cmd = [
-                  "gh", "api", 
-                  f"repos/{os.environ[\"REPO\"]}/actions/workflows/convert-release.yml/dispatches",
+                  "gh", "api", api_url,
                   "-X", "POST",
-                  "-f", f"ref=main",
-                  "-f", f"inputs[release_tag]={os.environ[\"TAG\"]}",
+                  "-f", "ref=main",
+                  "-f", f"inputs[release_tag]={tag}",
                   "-f", f"inputs[start_index]={str(start)}",
                   "-f", f"inputs[end_index]={str(end)}",
-                  "-f", f"inputs[video_format]={os.environ[\"V_FMT\"]}",
-                  "-f", f"inputs[audio_format]={os.environ[\"A_FMT\"]}",
-                  "-f", f"inputs[output_container]={os.environ[\"CONTAINER\"]}",
-                  "-f", f"inputs[crf]={os.environ[\"CRF\"]}"
+                  "-f", f"inputs[video_format]={v_fmt}",
+                  "-f", f"inputs[audio_format]={a_fmt}",
+                  "-f", f"inputs[output_container]={container}",
+                  "-f", f"inputs[crf]={crf}"
               ]
               
               subprocess.run(cmd, check=True)
               start = end
-          '
+          EOF
