@@ -79,22 +79,19 @@ jobs:
           START: ${{ inputs.start_index }}
           END: ${{ inputs.end_index }}
         run: |
-          # Henter alle videofiler og sorterer dem
+          # Bruker -c (compact) for å unngå linjeskift og feil med anførselstegn
           ALL_ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | sort')
           
           TOTAL_COUNT=$(echo "$ALL_ASSETS" | jq length)
           echo "Totalt antall videofiler funnet i releasen: $TOTAL_COUNT"
 
-          # Sjekk om brukeren vil bruke puljer, eller om det er 20 eller færre filer
           if [ "$USE_BATCH" = "false" ] || [ "$TOTAL_COUNT" -le 20 ]; then
-            echo "Bruker alle filer (ingen oppdeling aktiv eller <= 20 filer)."
-            ASSETS_JSON="$ALL_ASSETS"
+            ASSETS_JSON=$(echo "$ALL_ASSETS" | jq -c '.')
           else
-            echo "Bruker pulje-intervall fra $START til $END..."
-            ASSETS_JSON=$(echo "$ALL_ASSETS" | jq .[$START:$END])
+            ASSETS_JSON=$(echo "$ALL_ASSETS" | jq -c ".[$START:$END]")
           fi
 
-          echo "Valgte filer for denne kjøringen: $ASSETS_JSON"
+          echo "Valgte filer (JSON): $ASSETS_JSON"
           echo "matrix=$ASSETS_JSON" >> $GITHUB_OUTPUT
 
   convert-asset:
