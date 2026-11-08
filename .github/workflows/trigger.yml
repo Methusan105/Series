@@ -64,40 +64,28 @@ jobs:
           TOTAL_COUNT=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | length')
           echo "Totalt antall filer: $TOTAL_COUNT"
 
-          # 2. Bruker et Python-skript uten f-string komplikasjoner for API-kallene
-          python3 - << 'EOF'
-          import os, subprocess
+          # 2. Start loopen i ren Bash for å unngå miljøvariabel-krøll
+          chunk_size=21
+          start=0
 
-          total = int(os.environ["TOTAL_COUNT"])
-          repo = os.environ["REPO"]
-          tag = os.environ["TAG"]
-          v_fmt = os.environ["V_FMT"]
-          a_fmt = os.environ["A_FMT"]
-          container = os.environ["CONTAINER"]
-          crf = os.environ["CRF"]
+          while [ "$start" -lt "$TOTAL_COUNT" ]; do
+              end=$((start + chunk_size))
+              if [ "$end" -gt "$TOTAL_COUNT" ]; then
+                  end="$TOTAL_COUNT"
+              fi
 
-          chunk_size = 21
-          start = 0
+              echo "Trigget pulje: $start til $end"
 
-          while start < total:
-              end = min(start + chunk_size, total)
-              print(f"Trigget pulje: {start} til {end}")
-              
-              api_url = f"repos/{repo}/actions/workflows/convert-release.yml/dispatches"
-              
-              cmd = [
-                  "gh", "api", api_url,
-                  "-X", "POST",
-                  "-f", "ref=main",
-                  "-f", f"inputs[release_tag]={tag}",
-                  "-f", f"inputs[start_index]={str(start)}",
-                  "-f", f"inputs[end_index]={str(end)}",
-                  "-f", f"inputs[video_format]={v_fmt}",
-                  "-f", f"inputs[audio_format]={a_fmt}",
-                  "-f", f"inputs[output_container]={container}",
-                  "-f", f"inputs[crf]={crf}"
-              ]
-              
-              subprocess.run(cmd, check=True)
-              start = end
-          EOF
+              gh api "repos/$REPO/actions/workflows/convert-release.yml/dispatches" \
+                -X POST \
+                -f "ref=main" \
+                -f "inputs[release_tag]=$TAG" \
+                -f "inputs[start_index]=$start" \
+                -f "inputs[end_index]=$end" \
+                -f "inputs[video_format]=$V_FMT" \
+                -f "inputs[audio_format]=$A_FMT" \
+                -f "inputs[output_container]=$CONTAINER" \
+                -f "inputs[crf]=$CRF"
+
+              start=$end
+          done
