@@ -89,7 +89,7 @@ jobs:
       - name: Installer FFmpeg og Python-avhengigheter
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg python3-ffprobe
+          sudo apt-get install -y ffmpeg
 
       - name: Opprett mapper
         run: mkdir -p input_files output_files
