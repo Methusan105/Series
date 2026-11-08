@@ -1,4 +1,4 @@
-name: Konverter Release Medier (Matrise / En fil per jobb)
+name: Konverter Release Medier (Smart Pulje-valg)
 
 on:
   workflow_dispatch:
@@ -6,6 +6,24 @@ on:
       release_tag:
         description: 'Release Tag (f.eks. v1.0.0)'
         required: true
+        type: string
+      use_batching:
+        description: 'Vil du dele opp i puljer (intervaller)? (Velg false hvis <= 20 filer)'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      start_index:
+        description: 'Start-indeks (hvis puljer er true, f.eks. 0)'
+        required: true
+        default: '0'
+        type: string
+      end_index:
+        description: 'Slutt-indeks (hvis puljer er true, f.eks. 20)'
+        required: true
+        default: '20'
         type: string
       video_format:
         description: 'Velg videoformat/kodek'
@@ -51,22 +69,39 @@ jobs:
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - name: Hent liste over assets
+      - name: Hent og filtrer assets basert på valg
         id: set-matrix
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
+          USE_BATCH: ${{ inputs.use_batching }}
+          START: ${{ inputs.start_index }}
+          END: ${{ inputs.end_index }}
         run: |
-          ASSETS_JSON=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))]')
-          echo "Fant følgende videofiler: $ASSETS_JSON"
+          # Henter alle videofiler og sorterer dem
+          ALL_ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | sort')
+          
+          TOTAL_COUNT=$(echo "$ALL_ASSETS" | jq length)
+          echo "Totalt antall videofiler funnet i releasen: $TOTAL_COUNT"
+
+          # Sjekk om brukeren vil bruke puljer, eller om det er 20 eller færre filer
+          if [ "$USE_BATCH" = "false" ] || [ "$TOTAL_COUNT" -le 20 ]; then
+            echo "Bruker alle filer (ingen oppdeling aktiv eller <= 20 filer)."
+            ASSETS_JSON="$ALL_ASSETS"
+          else
+            echo "Bruker pulje-intervall fra $START til $END..."
+            ASSETS_JSON=$(echo "$ALL_ASSETS" | jq .[$START:$END])
+          fi
+
+          echo "Valgte filer for denne kjøringen: $ASSETS_JSON"
           echo "matrix=$ASSETS_JSON" >> $GITHUB_OUTPUT
 
   convert-asset:
     needs: get-assets
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 4  # Kjører 4 filer i parallell for å bli ferdig raskere
+      max-parallel: 4
       matrix:
         asset_name: ${{ fromJson(needs.get-assets.outputs.matrix) }}
     steps:
@@ -122,7 +157,6 @@ jobs:
           echo "Konverterer $FILE til $OUT_FILE..."
           ffmpeg -i "$FILE" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "$OUT_FILE"
           
-          # Verifikasjon: Sjekk at ut-filen eksisterer og har innhold
           test -s "$OUT_FILE" && echo "Konvertering vellykket!"
 
       - name: Last opp konvertert fil tilbake til releasen
