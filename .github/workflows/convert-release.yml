@@ -46,7 +46,7 @@ permissions:
   contents: write
 
 jobs:
-  # Jobb 1: Finn alle assets i releasen og bygg en matrise
+  # Jobb 1: Hent listen over alle videofiler i releasen og bygg en dynamisk matrise
   get-assets:
     runs-on: ubuntu-latest
     outputs:
@@ -59,20 +59,23 @@ jobs:
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
-          # Henter kun videofiler fra releasen og genererer en JSON-liste
+          # Henter videofiler fra releasen og genererer JSON-liste for matrisen
           ASSETS_JSON=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))]')
           echo "Fant følgende videofiler: $ASSETS_JSON"
           echo "matrix=$ASSETS_JSON" >> $GITHUB_OUTPUT
 
-  # Jobb 2: Kjøres én gang PER FIL i sin egen isolerte virtuell maskin
+  # Jobb 2: Kjøres i isolerte virtuelle maskiner (én fil per jobb)
   convert-asset:
     needs: get-assets
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 1  # Kjører én og én fil av gangen for å unngå GitHub API-konflikter ved opplasting
+      max-parallel: 1  # Kjører én fil om gangen for å forhindre opplastingskonflikter
       matrix:
         asset_name: ${{ fromJson(needs.get-assets.outputs.matrix) }}
     steps:
+      - name: Sjekk ut kodelager
+        uses: actions/checkout@v4
+
       - name: Frigjør diskplass på runneren
         run: |
           sudo rm -rf /usr/share/dotnet
@@ -88,13 +91,13 @@ jobs:
       - name: Opprett mapper
         run: mkdir -p input_files output_files
 
-      - name: Last ned kun DENNE filen (${{ matrix.asset_name }})
+      - name: Last ned kun denne filen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
-          echo "Laster kun ned: ${{ matrix.asset_name }}"
+          echo "Laster ned: ${{ matrix.asset_name }}"
           gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
 
       - name: Konverter filen
@@ -112,15 +115,17 @@ jobs:
             "AC3")                         ACODEC="ac3" ;;
           esac
 
+          ASSET="${{ matrix.asset_name }}"
+          BASENAME="${ASSET%.*}"
           EXT="${{ inputs.output_container }}"
-          FILE="input_files/${{ matrix.asset_name }}"
-          BASENAME="${matrix.asset_name%.*}"
+          
+          FILE="input_files/$ASSET"
           OUT_FILE="output_files/${BASENAME}${EXT}"
 
           echo "Konverterer $FILE til $OUT_FILE..."
           ffmpeg -i "$FILE" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "$OUT_FILE"
           
-          *Verifikasjon:* Sjekk om utfilen eksisterer og har størrelse over 0 bytes.
+          # Verifikasjon: Sjekk at ut-filen eksisterer og har innhold
           test -s "$OUT_FILE" && echo "Konvertering vellykket!"
 
       - name: Last opp konvertert fil tilbake til releasen
@@ -129,8 +134,9 @@ jobs:
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
+          ASSET="${{ matrix.asset_name }}"
+          BASENAME="${ASSET%.*}"
           EXT="${{ inputs.output_container }}"
-          BASENAME="${matrix.asset_name%.*}"
           OUT_FILE="output_files/${BASENAME}${EXT}"
 
           echo "Laster opp $OUT_FILE til release $TAG..."
