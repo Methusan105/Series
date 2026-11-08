@@ -1,4 +1,4 @@
-name: Konverter Enkel Pulje (Kopier video direkte)
+name: Konverter Enkel Pulje (Eksakt Kommando)
 
 on:
   workflow_dispatch:
@@ -18,7 +18,7 @@ on:
       audio_format:
         description: 'Lydformat'
         required: true
-        default: 'Behold original lyd (Copy)'
+        default: 'AAC'
         type: choice
         options:
           - 'Behold original lyd (Copy)'
@@ -35,11 +35,6 @@ on:
           - '.mkv'
           - '.webm'
           - '.mov'
-      ffmpeg_maps:
-        description: 'Ekstra FFmpeg map-argumenter (valgfritt)'
-        required: false
-        default: ''
-        type: string
 
 permissions:
   contents: write
@@ -98,7 +93,7 @@ jobs:
           echo "Laster ned: ${{ matrix.asset_name }}"
           gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
 
-      - name: Kopier video direkte uten å røre bitrate eller kvalitet
+      - name: Kjør FFmpeg med nøyaktig ønsket kommando
         run: |
           case "${{ inputs.audio_format }}" in
             "Behold original lyd (Copy)") ACODEC="copy" ;;
@@ -113,25 +108,18 @@ jobs:
           
           FILE="input_files/$ASSET"
           OUT_FILE="output_files/${BASENAME}${EXT}"
-          MAP_ARGS="${{ inputs.ffmpeg_maps }}"
 
-          echo "Kopierer videokodek direkte og behandler lyden..."
+          echo "Kjører FFmpeg for: $ASSET"
 
           if [ "$ACODEC" = "copy" ]; then
-              if [ -n "$MAP_ARGS" ]; then
-                  ffmpeg -y -i "$FILE" $MAP_ARGS -c copy "$OUT_FILE"
-              else
-                  ffmpeg -y -i "$FILE" -c copy "$OUT_FILE"
-              fi
+              # Hvis lyd også skal kopieres
+              ffmpeg -i "$FILE" -c:v copy -c:a copy -map 0:v -map 0:a:0 -y "$OUT_FILE"
           else
-              if [ -n "$MAP_ARGS" ]; then
-                  ffmpeg -y -i "$FILE" $MAP_ARGS -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
-              else
-                  ffmpeg -y -i "$FILE" -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
-              fi
+              # Bruker din eksakte kommando med spesifisert lydkodek og 320k bitrate
+              ffmpeg -i "$FILE" -c:v copy -c:a "$ACODEC" -b:a 320k -map 0:v -map 0:a:0 -y "$OUT_FILE"
           fi
 
-          test -s "$OUT_FILE" && echo "Direkte kopiering/konvertering vellykket!"
+          test -s "$OUT_FILE" && echo "Konvertering vellykket!"
 
       - name: Last opp konvertert fil tilbake til releasen
         env:
