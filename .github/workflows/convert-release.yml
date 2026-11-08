@@ -46,7 +46,6 @@ permissions:
   contents: write
 
 jobs:
-  # Jobb 1: Hent listen over alle videofiler i releasen og bygg en dynamisk matrise
   get-assets:
     runs-on: ubuntu-latest
     outputs:
@@ -59,17 +58,15 @@ jobs:
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
-          # Henter videofiler fra releasen og genererer JSON-liste for matrisen
           ASSETS_JSON=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))]')
           echo "Fant følgende videofiler: $ASSETS_JSON"
           echo "matrix=$ASSETS_JSON" >> $GITHUB_OUTPUT
 
-  # Jobb 2: Kjøres i isolerte virtuelle maskiner (én fil per jobb)
   convert-asset:
     needs: get-assets
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 1  # Kjører én fil om gangen for å forhindre opplastingskonflikter
+      max-parallel: 4  # Kjører 4 filer i parallell for å bli ferdig raskere
       matrix:
         asset_name: ${{ fromJson(needs.get-assets.outputs.matrix) }}
     steps:
@@ -91,7 +88,7 @@ jobs:
       - name: Opprett mapper
         run: mkdir -p input_files output_files
 
-      - name: Last ned kun denne filen
+      - name: Last ned denne filen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
