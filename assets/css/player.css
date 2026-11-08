@@ -15,4 +15,55 @@ video#my-video{width:100%;height:auto;background:#000;border-radius:10px;display
 .clear-btn{padding:10px 18px;background:transparent;color:var(--muted);border:1px solid var(--muted);border-radius:6px;cursor:pointer;font-size:14px;transition:all .2s}
 .clear-btn:hover{color:#fff;border-color:#fff;background:rgba(255,255,255,.06)}
 .vjs-big-play-button:hover{transform:translate(-50%,-50%) scale(1.08)!important;box-shadow:0 0 55px rgba(229,9,20,.75),inset 0 0 20px rgba(255,255,255,.15)!important}
-@media (max-width:640px){.video-container{padding:12px 8px}.player-footer{flex-direction:column;align-items:stretch}.next-episode,.clear-btn{width:100%;text-align:center}}
+@media (max-width:640px){.video-container{padding:12px 8px}.player-footer{flex-direction:column;align-items:stretch}.next-episode,.clear-btn{width:100%;text-align:center;min-height:44px}}
+@media (max-width:480px){.vjs-big-play-button{width:64px!important;height:64px!important}.vjs-big-play-button::before{font-size:26px;line-height:60px}}
+@media (pointer:coarse){.video-js:not(.vjs-user-active):not(:hover) .vjs-control-bar{opacity:1}.vjs-big-play-button{width:72px!important;height:72px!important}}
+@media (min-width:1920px){.video-container{max-width:1600px}.vjs-big-play-button{width:96px!important;height:96px!important}}
+body{padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
+
+/* TV / remote & keyboard focus */
+.vjs-control:focus,.vjs-control:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media (min-width:1920px){.vjs-control-bar{font-size:1.15rem}.vjs-big-play-button{width:112px!important;height:112px!important}.vjs-big-play-button::before{font-size:40px;line-height:104px}}
+@media (orientation:landscape) and (max-height:500px){.video-container{padding:8px}.player-footer{margin-top:8px}}
+@media (prefers-reduced-motion:reduce){.vjs-big-play-button,.next-episode{transition:none}}
+
+/* Phone enhancements */
+@media (max-width:480px){
+  .video-container{padding:8px 4px}
+  .player-footer{gap:8px;padding:10px 12px;border-radius:12px}
+  .next-episode,.clear-btn{min-height:48px;font-size:16px}
+  .hint{font-size:12px;padding:0 8px}
+}
+@media (max-width:360px){
+  .vjs-big-play-button{width:56px!important;height:56px!important}
+  .vjs-big-play-button::before{font-size:22px;line-height:52px}
+}
+/* TV enhancements */
+@media (min-width:2560px){
+  .video-container{max-width:2200px;padding:40px 32px}
+  .vjs-control-bar{height:3.5em}
+  .vjs-control{font-size:1.25rem}
+}
+/* Safe area for notched phones/TV */
+@supports (padding: env(safe-area-inset-bottom)){
+  .video-container{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+}
+
+/* Mobile-specific */
+@media (max-width:768px){
+  html,body{overflow-x:hidden}
+  .video-container{padding:10px 6px}
+  .vjs-control-bar{padding:0 4px}
+  .vjs-volume-panel,.vjs-playback-rate{display:none}
+}
+@media (max-width:480px){
+  .vjs-big-play-button{width:60px!important;height:60px!important}
+  .vjs-big-play-button::before{font-size:24px;line-height:56px}
+}
+
+/* Tablet-specific */
+@media (min-width:769px) and (max-width:1024px){
+  .video-container{max-width:900px;padding:16px 12px}
+  .player-footer{gap:10px}
+  .next-episode,.clear-btn{min-height:44px}
+}
