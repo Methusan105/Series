@@ -1,114 +1,53 @@
-name: Konverter Release Medier (Automatiske Puljer)
+name: Konverter Enkel Pulje
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag (f.eks. v1.0.0)'
+        description: 'Release Tag'
+        required: true
+        type: string
+      start_index:
+        description: 'Start indeks'
+        required: true
+        type: string
+      end_index:
+        description: 'Slutt indeks'
         required: true
         type: string
       video_format:
-        description: 'Velg videoformat/kodek'
+        description: 'Videoformat'
         required: true
         default: 'HEVC (H.265)'
-        type: choice
-        options:
-          - 'HEVC (H.265)'
-          - 'AVC (H.264)'
-          - 'VP9 (WebM)'
+        type: string
       audio_format:
-        description: 'Velg lydformat/kodek'
+        description: 'Lydformat'
         required: true
         default: 'Behold original lyd (Copy)'
-        type: choice
-        options:
-          - 'Behold original lyd (Copy)'
-          - 'AAC'
-          - 'Opus'
-          - 'AC3'
+        type: string
       output_container:
-        description: 'Velg filformat (container)'
+        description: 'Container'
         required: true
         default: '.mp4'
-        type: choice
-        options:
-          - '.mp4'
-          - '.mkv'
-          - '.webm'
-          - '.mov'
+        type: string
       crf:
-        description: 'Kvalitet/CRF (Lavere tall = bedre kvalitet, f.eks. 28 for HEVC)'
+        description: 'CRF'
         required: true
         default: '28'
         type: string
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
-  # Jobb 1: Genererer automatisk puljene (f.eks. 0-20, 20-41, 41-62...) basert på hvor mange filer det er
-  generate-batches:
-    runs-on: ubuntu-latest
-    outputs:
-      batch_matrix: ${{ steps.set-batches.outputs.batch_matrix }}
-    steps:
-      - name: Lag bolker/intervaller
-        id: set-batches
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
-          REPO: ${{ github.repository }}
-        run: |
-          # Hent antall videofiler
-          TOTAL_COUNT=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | length')
-          echo "Totalt antall videofiler: $TOTAL_COUNT"
-
-          # Lag JSON-matrise med intervaller på ca. 21 filer (0-20, 20-41, 41-62 osv.)
-          # Python brukes her for å generere en pen JSON-liste med start og end
-          python3 -c '
-          import json
-          total = int("'$TOTAL_COUNT'")
-          chunk_size = 21
-          batches = []
-          
-          start = 0
-          while start < total:
-              end = min(start + chunk_size, total)
-              batches.append({"start": start, "end": end})
-              start = end
-              
-          print(json.dumps(batches))
-          '
-          
-          BATCHES_JSON=$(python3 -c '
-          import json
-          total = int("'$TOTAL_COUNT'")
-          chunk_size = 21
-          batches = []
-          start = 0
-          while start < total:
-              end = min(start + chunk_size, total)
-              batches.append({"start": start, "end": end})
-              start = end
-          print(json.dumps(batches))
-          ')
-
-          echo "Genererte puljer: $BATCHES_JSON"
-          echo "batch_matrix=$BATCHES_JSON" >> $GITHUB_OUTPUT
-
-  # Jobb 2: Kjører alle puljene i PARALLELL (eller så mange GitHub tillater samtidig)
   convert-batch:
-    needs: generate-batches
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 4  # Hvor mange puljer som kjører samtidig
-      matrix:
-        batch: ${{ fromJson(needs.generate-batches.outputs.batch_matrix) }}
     steps:
       - name: Sjekk ut kodelager
         uses: actions/checkout@v4
 
-      - name: Frigjør diskplass på runneren
+      - name: Frigjør diskplass
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
@@ -123,17 +62,14 @@ jobs:
       - name: Opprett mapper
         run: mkdir -p input_files output_files
 
-      - name: Last ned filer for denne puljen (${{ matrix.batch.start }} til ${{ matrix.batch.end }})
+      - name: Hent og konverter pulje (Fra ${{ inputs.start_index }} til ${{ inputs.end_index }})
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
-          START: ${{ matrix.batch.start }}
-          END: ${{ matrix.batch.end }}
+          START: ${{ inputs.start_index }}
+          END: ${{ inputs.end_index }}
         run: |
-          echo "Henter filer fra indeks $START til $END..."
-          
-          # Henter kun filene som tilhører denne spesifikke puljen
           FILES_TO_DOWNLOAD=$(gh release view "$TAG" --repo "$REPO" --json assets --jq "[.assets[].name | select(test(\"\\\\.(mp4|mkv|mov|avi|webm)$\"; \"i\"))] | sort | .[$START:$END][]")
           
           for filename in $FILES_TO_DOWNLOAD; do
@@ -141,8 +77,6 @@ jobs:
             gh release download "$TAG" --pattern "$filename" --dir input_files --repo "$REPO"
           done
 
-      - name: Konverter filene i denne puljen
-        run: |
           case "${{ inputs.video_format }}" in
             "HEVC (H.265)") VCODEC="libx265" ;;
             "AVC (H.264)")  VCODEC="libx264" ;;
@@ -162,22 +96,18 @@ jobs:
             if [ -f "$file" ]; then
               filename=$(basename "$file")
               basename_no_ext="${filename%.*}"
-              
               OUT_FILE="output_files/${basename_no_ext}${EXT}"
+              
               echo "Konverterer $filename til $OUT_FILE..."
-              
               ffmpeg -i "$file" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "$OUT_FILE"
-              
-              # Slett originalen etter hvert som den blir ferdig for å spare plass
               rm -f "$file"
             fi
           done
 
-      - name: Last opp konverterte filer tilbake til releasen
+      - name: Last opp til release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
         run: |
-          echo "Laster opp ferdige filer fra denne puljen til release $TAG..."
           gh release upload "$TAG" output_files/* --clobber --repo "$REPO"
