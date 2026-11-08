@@ -1,4 +1,4 @@
-name: Konverter Enkel Pulje (Loop til 1.8-1.9 GB)
+name: Konverter Enkel Pulje (Kopier video direkte)
 
 on:
   workflow_dispatch:
@@ -15,16 +15,6 @@ on:
         description: 'Slutt indeks'
         required: true
         type: string
-      video_format:
-        description: 'Videoformat'
-        required: true
-        default: 'HEVC (H.265)'
-        type: choice
-        options:
-          - 'HEVC (H.265)'
-          - 'AVC (H.264)'
-          - 'VP9 (WebM)'
-          - 'Behold original video (Copy)'
       audio_format:
         description: 'Lydformat'
         required: true
@@ -108,15 +98,8 @@ jobs:
           echo "Laster ned: ${{ matrix.asset_name }}"
           gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
 
-      - name: Konverter og loop til filstørrelsen er mellom 1.8 og 1.9 GB
+      - name: Kopier video direkte uten å røre bitrate eller kvalitet
         run: |
-          case "${{ inputs.video_format }}" in
-            "HEVC (H.265)") VCODEC="libx265" ;;
-            "AVC (H.264)")  VCODEC="libx264" ;;
-            "VP9 (WebM)")   VCODEC="libvpx-vp9" ;;
-            "Behold original video (Copy)") VCODEC="copy" ;;
-          esac
-
           case "${{ inputs.audio_format }}" in
             "Behold original lyd (Copy)") ACODEC="copy" ;;
             "AAC")                         ACODEC="aac" ;;
@@ -132,80 +115,23 @@ jobs:
           OUT_FILE="output_files/${BASENAME}${EXT}"
           MAP_ARGS="${{ inputs.ffmpeg_maps }}"
 
-          echo "Analyserer varighet for $FILE med ffprobe..."
-          DURATION=$(python3 -c "
-          import subprocess, json
-          result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '$FILE'], capture_output=True, text=True)
-          data = json.loads(result.stdout)
-          print(float(data['format']['duration']))
-          ")
+          echo "Kopierer videokodek direkte og behandler lyden..."
 
-          echo "Filens varighet: $DURATION sekunder"
-
-          # Start med å sikte på 1.85 GB
-          TARGET_BITS=$(python3 -c "print(int((1.85 * 1024 * 1024 * 1024 * 8) / $DURATION))")
-          FINAL_VIDEO_BITRATE="$TARGET_BITS"
-
-          # Definer grenser i bytes (1.8 GB og 1.9 GB)
-          MIN_SIZE_BYTES=$(python3 -c "print(int(1.8 * 1024 * 1024 * 1024))")
-          MAX_SIZE_BYTES=$(python3 -c "print(int(1.9 * 1024 * 1024 * 1024))")
-
-          attempt=1
-
-          while true; do
-              echo "--- Forsøk $attempt med videobitrate: $FINAL_VIDEO_BITRATE bps ---"
-
-              if [ "$VCODEC" = "copy" ] && [ "$ACODEC" = "copy" ]; then
-                  echo "Kopierer direkte..."
+          if [ "$ACODEC" = "copy" ]; then
+              if [ -n "$MAP_ARGS" ]; then
                   ffmpeg -y -i "$FILE" $MAP_ARGS -c copy "$OUT_FILE"
-              elif [ "$VCODEC" = "copy" ]; then
-                  echo "Kopierer video, omkoder lyd..."
+              else
+                  ffmpeg -y -i "$FILE" -c copy "$OUT_FILE"
+              fi
+          else
+              if [ -n "$MAP_ARGS" ]; then
                   ffmpeg -y -i "$FILE" $MAP_ARGS -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
               else
-                  # 2-pass
-                  echo "Starter Pass 1..."
-                  ffmpeg -y -i "$FILE" $MAP_ARGS -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 1 -an -f null /dev/null
-
-                  echo "Starter Pass 2..."
-                  if [ "$ACODEC" = "copy" ]; then
-                      ffmpeg -y -i "$FILE" $MAP_ARGS -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
-                  else
-                      ffmpeg -y -i "$FILE" $MAP_ARGS -c:v "$VCODEC" -b:v "$FINAL_VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
-                  fi
-
-                  rm -f ffmpeg2pass-0.log ffmpeg2pass-0.log.mbtree
+                  ffmpeg -y -i "$FILE" -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
               fi
+          fi
 
-              # Sjekk størrelsen på den ferdige filen
-              if [ -f "$OUT_FILE" ]; then
-                  FILE_SIZE=$(stat -c%s "$OUT_FILE")
-                  echo "Ferdig filstørrelse denne runden: $FILE_SIZE bytes"
-
-                  # Hvis vi kopierer (copy), kan vi ikke justere bitraten, så da hopper vi ut med en gang
-                  if [ "$VCODEC" = "copy" ]; then
-                      break
-                  fi
-
-                  # Sjekk om filen er under 1.8 GB
-                  if [ "$FILE_SIZE" -lt "$MIN_SIZE_BYTES" ]; then
-                      echo "Filen ble for liten (< 1.8 GB). Øker bitraten og prøver på nytt..."
-                      FINAL_VIDEO_BITRATE=$(python3 -c "print(int($FINAL_VIDEO_BITRATE * (1.85 * 1024 * 1024 * 1024) / $FILE_SIZE))")
-                      attempt=$((attempt + 1))
-                  elif [ "$FILE_SIZE" -gt "$MAX_SIZE_BYTES" ]; then
-                      echo "Filen ble for stor (> 1.9 GB). Senker bitraten litt og prøver på nytt..."
-                      FINAL_VIDEO_BITRATE=$(python3 -c "print(int($FINAL_VIDEO_BITRATE * (1.85 * 1024 * 1024 * 1024) / $FILE_SIZE))")
-                      attempt=$((attempt + 1))
-                  else
-                      echo "Suksess! Filstørrelsen er perfekt mellom 1.8 og 1.9 GB."
-                      break
-                  fi
-              else
-                  echo "Feil: Utfilen ble ikke generert."
-                  exit 1
-              fi
-          done
-
-          test -s "$OUT_FILE" && echo "Konvertering vellykket!"
+          test -s "$OUT_FILE" && echo "Direkte kopiering/konvertering vellykket!"
 
       - name: Last opp konvertert fil tilbake til releasen
         env:
