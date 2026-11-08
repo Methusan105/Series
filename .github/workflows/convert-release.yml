@@ -19,12 +19,22 @@ on:
         description: 'Videoformat'
         required: true
         default: 'HEVC (H.265)'
-        type: string
+        type: choice
+        options:
+          - 'HEVC (H.265)'
+          - 'AVC (H.264)'
+          - 'VP9 (WebM)'
+          - 'Behold original video (Copy)'
       audio_format:
         description: 'Lydformat'
         required: true
         default: 'Behold original lyd (Copy)'
-        type: string
+        type: choice
+        options:
+          - 'Behold original lyd (Copy)'
+          - 'AAC'
+          - 'Opus'
+          - 'AC3'
       output_container:
         description: 'Container'
         required: true
@@ -93,12 +103,13 @@ jobs:
           echo "Laster ned: ${{ matrix.asset_name }}"
           gh release download "$TAG" --pattern "${{ matrix.asset_name }}" --dir input_files --repo "$REPO"
 
-      - name: Konverter til maksimal kvalitet under 2GB (2-pass)
+      - name: Konverter eller kopier med maks 2GB grense
         run: |
           case "${{ inputs.video_format }}" in
             "HEVC (H.265)") VCODEC="libx265" ;;
             "AVC (H.264)")  VCODEC="libx264" ;;
             "VP9 (WebM)")   VCODEC="libvpx-vp9" ;;
+            "Behold original video (Copy)") VCODEC="copy" ;;
           esac
 
           case "${{ inputs.audio_format }}" in
@@ -115,44 +126,42 @@ jobs:
           FILE="input_files/$ASSET"
           OUT_FILE="output_files/${BASENAME}${EXT}"
 
-          echo "Analyserer varighet for $FILE..."
-
-          # Bruker Python til å hente nøyaktig varighet i sekunder ved hjelp av ffprobe
-          DURATION=$(python3 -c "
-          import subprocess, json
-          result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '$FILE'], capture_output=True, text=True)
-          data = json.loads(result.stdout)
-          print(float(data['format']['duration']))
-          ")
-
-          echo "Filens varighet: $DURATION sekunder"
-
-          # Vi sikter på 1.9 GB for å ha litt margin til overhead (ca. 16.300 megabit totalt)
-          # Formel for bitrate (bits per sekund) = (Mål-størrelse i bytes * 8) / varighet
-          # 1.9 GB = 1.9 * 1024 * 1024 * 1024 bytes = 2,039,634,329 bytes
-          TARGET_BITS=$(python3 -c "print(int((1.9 * 1024 * 1024 * 1024 * 8) / $DURATION))")
-          
-          # Om det er lyd som kopieres, trekker vi fra litt plass til lyden hvis den skal omkodes, 
-          # men hvis lyden kopieres (copy), kan nesten alt gå til videoen.
-          # Vi setter en fornuftig grense på videobitrate:
-          VIDEO_BITRATE=$TARGET_BITS
-          
-          echo "Beregnet optimal videobitrate for å treffe < 2GB: $VIDEO_BITRATE bps"
-
-          echo "Starter Pass 1..."
-          ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 1 -an -f null /dev/null
-
-          echo "Starter Pass 2 (fullfører konvertering)..."
-          if [ "$ACODEC" = "copy" ]; then
-            ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
+          # Hvis både video og lyd skal kopieres (copy), trenger vi ikke 2-pass eller kompleks konvertering
+          if [ "$VCODEC" = "copy" ] && [ "$ACODEC" = "copy" ]; then
+            echo "Både video og lyd er satt til copy. Kopierer filen direkte..."
+            ffmpeg -y -i "$FILE" -c copy "$OUT_FILE"
           else
-            ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+            echo "Analyserer varighet for $FILE..."
+            DURATION=$(python3 -c "
+            import subprocess, json
+            result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '$FILE'], capture_output=True, text=True)
+            data = json.loads(result.stdout)
+            print(float(data['format']['duration']))
+            ")
+
+            echo "Filens varighet: $DURATION sekunder"
+            TARGET_BITS=$(python3 -c "print(int((1.9 * 1024 * 1024 * 1024 * 8) / $DURATION))")
+            VIDEO_BITRATE=$TARGET_BITS
+
+            if [ "$VCODEC" = "copy" ]; then
+              echo "Video kopieres direkte (copy), lyd omkodes..."
+              ffmpeg -y -i "$FILE" -c:v copy -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+            else
+              echo "Starter Pass 1 (video omkodes til 2GB maks)..."
+              ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 1 -an -f null /dev/null
+
+              echo "Starter Pass 2 (fullfører konvertering)..."
+              if [ "$ACODEC" = "copy" ]; then
+                ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a copy "$OUT_FILE"
+              else
+                ffmpeg -y -i "$FILE" -c:v "$VCODEC" -b:v "$VIDEO_BITRATE" -pass 2 -c:a "$ACODEC" -b:a 192k "$OUT_FILE"
+              fi
+
+              rm -f ffmpeg2pass-0.log ffmpeg2pass-0.log.mbtree
+            fi
           fi
 
-          # Rydder opp etter pass-loggfiler
-          rm -f ffmpeg2pass-0.log ffmpeg2pass-0.log.mbtree
-
-          test -s "$OUT_FILE" && echo "Konvertering vellykket! Sjekk filstørrelse under 2GB."
+          test -s "$OUT_FILE" && echo "Konvertering vellykket!"
 
       - name: Last opp konvertert fil tilbake til releasen
         env:
