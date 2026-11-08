@@ -1,0 +1,98 @@
+name: Konverter Release Medier
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (f.eks. v1.0.0)'
+        required: true
+        type: string
+      video_format:
+        description: 'Velg videoformat/kodek'
+        required: true
+        default: 'HEVC (H.265)'
+        type: choice
+        options:
+          - 'HEVC (H.265)'
+          - 'AVC (H.264)'
+          - 'VP9 (WebM)'
+      audio_format:
+        description: 'Velg lydformat/kodek'
+        required: true
+        default: 'Behold original lyd (Copy)'
+        type: choice
+        options:
+          - 'Behold original lyd (Copy)'
+          - 'AAC'
+          - 'Opus'
+          - 'AC3'
+      crf:
+        description: 'Kvalitet/CRF (Lavere tall = bedre kvalitet, f.eks. 28 for HEVC)'
+        required: true
+        default: '28'
+        type: string
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sjekk ut kodelager
+        uses: actions/checkout@v4
+
+      - name: Installer FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Opprett mapper for behandling
+        run: |
+          mkdir -p input_files output_files
+
+      - name: Last ned assets fra angitt release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "Henter assets fra release: $TAG i $REPO"
+          gh release download "$TAG" --dir input_files --repo "$REPO"
+
+      - name: Konverter medier
+        run: |
+          # Kartlegg brukervennlig videonavn til FFmpeg-kodek
+          case "${{ inputs.video_format }}" in
+            "HEVC (H.265)") VCODEC="libx265" ;;
+            "AVC (H.264)")  VCODEC="libx264" ;;
+            "VP9 (WebM)")   VCODEC="libvpx-vp9" ;;
+          esac
+
+          # Kartlegg brukervennlig lydnavn til FFmpeg-kodek
+          case "${{ inputs.audio_format }}" in
+            "Behold original lyd (Copy)") ACODEC="copy" ;;
+            "AAC")                         ACODEC="aac" ;;
+            "Opus")                        ACODEC="libopus" ;;
+            "AC3")                         ACODEC="ac3" ;;
+          esac
+
+          echo "Kjører konvertering..."
+          echo "Videokodek: $VCODEC | Lydkodek: $ACODEC | CRF: ${{ inputs.crf }}"
+
+          for file in input_files/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              extension="${filename##*.}"
+              
+              if [[ "$extension" =~ ^(mp4|mkv|mov|avi|webm)$ ]]; then
+                echo "Behandler: $filename"
+                ffmpeg -i "$file" -c:v "$VCODEC" -crf ${{ inputs.crf }} -c:a "$ACODEC" "output_files/${filename%.*}.mp4"
+              else
+                echo "Hopper over ikke-videofil: $filename"
+              fi
+            fi
+          done
+
+      - name: Last opp de konverterte filene som en artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: converted-media-${{ inputs.release_tag }}
+          path: output_files/
