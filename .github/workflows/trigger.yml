@@ -1,0 +1,94 @@
+name: Start Alle Puljer Automatisk
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (f.eks. v1.0.0)'
+        required: true
+        type: string
+      video_format:
+        description: 'Velg videoformat/kodek'
+        required: true
+        default: 'HEVC (H.265)'
+        type: choice
+        options:
+          - 'HEVC (H.265)'
+          - 'AVC (H.264)'
+          - 'VP9 (WebM)'
+      audio_format:
+        description: 'Velg lydformat/kodek'
+        required: true
+        default: 'Behold original lyd (Copy)'
+        type: choice
+        options:
+          - 'Behold original lyd (Copy)'
+          - 'AAC'
+          - 'Opus'
+          - 'AC3'
+      output_container:
+        description: 'Velg filformat (container)'
+        required: true
+        default: '.mp4'
+        type: choice
+        options:
+          - '.mp4'
+          - '.mkv'
+          - '.webm'
+          - '.mov'
+      crf:
+        description: 'Kvalitet/CRF'
+        required: true
+        default: '28'
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-batches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generer og send ut workflows for hver pulje
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+          REPO: ${{ github.repository }}
+          V_FMT: ${{ inputs.video_format }}
+          A_FMT: ${{ inputs.audio_format }}
+          CONTAINER: ${{ inputs.output_container }}
+          CRF: ${{ inputs.crf }}
+        run: |
+          # 1. Finn totalt antall videofiler
+          TOTAL_COUNT=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | length')
+          echo "Totalt antall filer: $TOTAL_COUNT"
+
+          # 2. Del opp automatisk i bolker på 21 filer helt til alle er dekket
+          python3 -c '
+          import os, json, subprocess
+          total = int(os.environ["TOTAL_COUNT"])
+          chunk_size = 21
+          
+          start = 0
+          while start < total:
+              end = min(start + chunk_size, total)
+              print(f"Trigget pulje: {start} til {end}")
+              
+              cmd = [
+                  "gh", "api", 
+                  f"repos/{os.environ[\"REPO\"]}/actions/workflows/convert-release.yml/dispatches",
+                  "-X", "POST",
+                  "-f", f"ref=main",
+                  "-f", f"inputs[release_tag]={os.environ[\"TAG\"]}",
+                  "-f", f"inputs[start_index]={str(start)}",
+                  "-f", f"inputs[end_index]={str(end)}",
+                  "-f", f"inputs[video_format]={os.environ[\"V_FMT\"]}",
+                  "-f", f"inputs[audio_format]={os.environ[\"A_FMT\"]}",
+                  "-f", f"inputs[output_container]={os.environ[\"CONTAINER\"]}",
+                  "-f", f"inputs[crf]={os.environ[\"CRF\"]}"
+              ]
+              
+              subprocess.run(cmd, check=True)
+              start = end
+          '
