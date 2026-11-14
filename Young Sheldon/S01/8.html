@@ -6,6 +6,7 @@
   <title>Young.Sheldon &gt; S01 &gt; 8</title>
   <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
   <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+  <script src="/Series/assets/js/accelerated-download.js"></script>
   <script src="/Series/Playback.js"></script>
   <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
   <link rel="stylesheet" href="/Series/assets/css/player.css" />
@@ -30,7 +31,7 @@
     </video>
     <div class="player-footer">
       <a href="/Series/Young.Sheldon/S01/9.html" class="next-episode" onclick="clearGistProgress()">Next Episode &rarr;</a>
-      <button class="clear-btn" type="button" onclick="clearGistProgress()">Clear Progress</button>
+      <button class="clear-btn" type="button" onclick="clearGistProgress()">Clear Progress</button>      <button class="preload-btn" type="button" onclick="startAcceleratedPreload()">Preload Video (Fast)</button>
     </div>
     <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen &bull; M: Mute &bull; C: Subs &bull; &uarr; &darr;: Volume</p>
   </div>
@@ -163,6 +164,69 @@ document.addEventListener('DOMContentLoaded', function () {
         sessionStorage.removeItem('githubAccessToken');
     });
 });
+
+    let acceleratedDownloader = null;
+    
+    function startAcceleratedPreload() {
+      var video = document.getElementById('my-video');
+      var btn = document.querySelector('.preload-btn');
+      var player = videojs('my-video');
+      
+      if (!video || !video.src) {
+        alert('No video source found');
+        return;
+      }
+      
+      var videoUrl = video.currentSrc || video.src;
+      if (!videoUrl) {
+        var sourceEl = video.querySelector('source');
+        if (sourceEl) videoUrl = sourceEl.src;
+      }
+      
+      if (!videoUrl) {
+        alert('Could not find video URL');
+        return;
+      }
+      
+      btn.textContent = 'Preparing...';
+      btn.disabled = true;
+      
+      if (acceleratedDownloader) {
+        acceleratedDownloader.abort();
+      }
+      
+      acceleratedDownloader = new AcceleratedDownloader({
+        chunkSize: 1024 * 1024,
+        maxConcurrent: 6,
+        onProgress: function(downloaded, total) {
+          var percent = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+          var downloadedMB = (downloaded / (1024 * 1024)).toFixed(1);
+          var totalMB = (total / (1024 * 1024)).toFixed(1);
+          btn.textContent = 'Downloading: ' + percent + '% (' + downloadedMB + 'MB / ' + totalMB + 'MB)';
+        },
+        onComplete: function(blobUrl) {
+          btn.textContent = 'Preloaded!';
+          btn.style.background = '#28a745';
+          btn.disabled = true;
+          
+          if (player && player.src) {
+            player.src({ src: blobUrl, type: 'video/mp4' });
+            player.load();
+          } else {
+            video.src = blobUrl;
+            video.load();
+          }
+        },
+        onError: function(error) {
+          btn.textContent = 'Failed - Retry';
+          btn.disabled = false;
+          btn.style.background = '#dc3545';
+          console.error('Preload failed:', error);
+        }
+      });
+      
+      acceleratedDownloader.download(videoUrl, video);
+    }
 </script>
 
 </body>
