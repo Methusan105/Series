@@ -165,23 +165,21 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
-    let acceleratedDownloader = null;
+        let acceleratedDownloader = null;
     
     function startAcceleratedPreload() {
       var video = document.getElementById('my-video');
       var btn = document.querySelector('.preload-btn');
       var player = videojs('my-video');
       
-      if (!video || !video.src) {
-        alert('No video source found');
+      if (!video) {
+        alert('Video element not found');
         return;
       }
       
-      var videoUrl = video.currentSrc || video.src;
-      if (!videoUrl) {
-        var sourceEl = video.querySelector('source');
-        if (sourceEl) videoUrl = sourceEl.src;
-      }
+      // Get video URL from source element (video.js uses <source> tags)
+      var sourceEl = video.querySelector('source');
+      var videoUrl = sourceEl ? sourceEl.src : (video.currentSrc || video.src);
       
       if (!videoUrl) {
         alert('Could not find video URL');
