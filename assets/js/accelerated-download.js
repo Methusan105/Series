@@ -10,13 +10,25 @@ class AcceleratedDownloader {
     this.downloadedChunks = new Map();
     this.totalSize = 0;
     this.downloadedSize = 0;
+    this.corsProxy = options.corsProxy || 'https://cors-anywhere.herokuapp.com/';
+    this.useProxy = options.useProxy !== false;
+  }
+
+  _getProxyUrl(url) {
+    if (!this.useProxy) return url;
+    // GitHub releases often allow CORS directly
+    if (url.includes('github.com') && url.includes('/releases/download/')) {
+      return url;
+    }
+    return url;
   }
 
   async download(url, videoElement) {
     this.aborted = false;
+    const proxiedUrl = this._getProxyUrl(url);
     
     try {
-      const headResponse = await fetch(url, { method: 'HEAD' });
+      const headResponse = await fetch(proxiedUrl, { method: 'HEAD' });
       if (!headResponse.ok) throw new Error(`HEAD request failed: ${headResponse.status}`);
       
       const contentLength = headResponse.headers.get('content-length');
@@ -26,11 +38,11 @@ class AcceleratedDownloader {
       const supportsRange = headResponse.headers.get('accept-ranges') === 'bytes';
       
       if (!supportsRange) {
-        return this.fallbackDownload(url, videoElement);
+        return this.fallbackDownload(proxiedUrl, videoElement);
       }
 
       const chunks = this.calculateChunks(this.totalSize);
-      await this.downloadChunksParallel(url, chunks, videoElement);
+      await this.downloadChunksParallel(proxiedUrl, chunks, videoElement);
       
       if (!this.aborted) {
         const blob = this.assembleBlob();
