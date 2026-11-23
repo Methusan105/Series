@@ -114,25 +114,6 @@
       50% { content: ".."; }
       75% { content: "..."; }
     }
-    #fileInput { display: none; }
-    .btn {
-      width: 100%;
-      margin-top: 8px;
-      padding: 12px;
-      border: none;
-      border-radius: 4px;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 700;
-      font-size: 15px;
-      cursor: pointer;
-      transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
-    }
-    .btn:hover {
-      background: var(--accent-hover);
-      box-shadow: 0 0 18px rgba(229, 9, 20, 0.7), 0 0 36px rgba(229, 9, 20, 0.35);
-      transform: translateY(-1px);
-    }
     .credit {
       position: absolute;
       bottom: 18px;
@@ -155,9 +136,7 @@
     <h1>Resumer</h1>
     <p class="subtitle">Restoring your playback progress</p>
     <div class="spinner" id="spinner"></div>
-    <p class="status" id="status">Waiting for credentials<span class="dots"></span></p>
-    <button id="credBtn" class="btn" style="display:none">Choose credentials file</button>
-    <input id="fileInput" type="file" accept=".txt" />
+    <p class="status" id="status">Waiting for sign-in<span class="dots"></span></p>
   </div>
 
   <div class="credit">powered by gist sync</div>
@@ -166,110 +145,25 @@
   <script>
     document.addEventListener('DOMContentLoaded', function () {
       var gistFilename = 'video_progress.json';
-
-      var username = sessionStorage.getItem('githubUsername');
-      var gistId = sessionStorage.getItem('githubGistId');
-      var accessToken = sessionStorage.getItem('githubAccessToken');
-
-      var credBtn = document.getElementById('credBtn');
-      var fileInput = document.getElementById('fileInput');
-
       var spinner = document.getElementById('spinner');
       var status = document.getElementById('status');
 
-      function showLoading() {
+      function showLoading(text) {
         if (spinner) spinner.style.display = 'block';
-        if (status) status.innerHTML = 'Loading<span class="dots"></span>';
-      }
-      function showIdle() {
-        if (spinner) spinner.style.display = 'none';
-        if (status) status.innerHTML = 'Waiting for credentials<span class="dots"></span>';
+        if (status) status.innerHTML = text + '<span class="dots"></span>';
       }
 
-      if (!username || !gistId || !accessToken) {
-        var isTV = detectTV();
-        if (isTV) {
-          username = prompt('Enter your GitHub username:');
-          gistId = prompt('Enter your Gist ID:');
-          accessToken = prompt('Enter your GitHub Personal Access Token:');
-          sessionStorage.setItem('githubUsername', username);
-          sessionStorage.setItem('githubGistId', gistId);
-          sessionStorage.setItem('githubAccessToken', accessToken);
-          setupGistScript();
-        }
-        if (credBtn) {
-          credBtn.style.display = 'block';
-          showIdle();
-          credBtn.addEventListener('click', function () {
-            fileInput.click();
-          });
-        }
-        if (fileInput) {
-          fileInput.addEventListener('change', function (event) {
-            var file = event.target.files[0];
-            if (file) {
-              var reader = new FileReader();
-              reader.onload = function (e) {
-                processFileContent(e.target.result);
-              };
-              reader.readAsText(file);
-            }
-          });
-        }
-      } else {
-        setupGistScript();
-      }
-
-      function detectTV() {
-        var userAgent = navigator.userAgent.toLowerCase();
-        return userAgent.includes('tv');
-      }
-
-      function processFileContent(content) {
-        var lines = content.split('\n');
-        lines.forEach(function (line) {
-          var parts = line.split('=');
-          if (parts.length === 2) {
-            var key = parts[0].trim().toLowerCase();
-            var value = parts[1].trim();
-            if (key === 'username') {
-              username = value;
-            } else if (key === 'gist id') {
-              gistId = value;
-            } else if (key === 'token') {
-              accessToken = value;
-            }
+      SeriesAuth.require(function () {
+        showLoading('Loading your progress');
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+          if (progressData && progressData.url) {
+            window.location.href = progressData.url;
+          } else {
+            if (spinner) spinner.style.display = 'none';
+            if (status) status.textContent = 'No saved progress found — pick a series from the home page.';
           }
         });
-
-        console.log('Username:', username);
-        console.log('Gist ID:', gistId);
-        console.log('Access Token:', accessToken);
-
-        sessionStorage.setItem('githubUsername', username);
-        sessionStorage.setItem('githubGistId', gistId);
-        sessionStorage.setItem('githubAccessToken', accessToken);
-
-        setupGistScript();
-      }
-
-      function setupGistScript() {
-        showLoading();
-        var gistScript = document.createElement('script');
-        gistScript.src = `https://gist.github.com/${username}/${gistId}.js?access_token=${accessToken}`;
-        document.head.appendChild(gistScript);
-
-        fetch(`https://api.github.com/gists/${gistId}`)
-          .then(response => response.json())
-          .then(data => {
-            if (data.files && data.files[gistFilename]) {
-              var progressData = JSON.parse(data.files[gistFilename].content);
-              if (progressData.url) {
-                window.location.href = progressData.url;
-              }
-            }
-          });
-      }
+      });
     });
   </script>
 </body>

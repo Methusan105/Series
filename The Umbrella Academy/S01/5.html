@@ -34,12 +34,11 @@
     </div>
     <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen &bull; M: Mute &bull; C: Subs &bull; &uarr; &darr;: Volume</p>
   </div>
-  <script>
-var video = document.getElementById('my-video');
+  <script>var video = document.getElementById('my-video');
 var player = videojs("my-video");
 var spacePressed = false;
 var pageLoadTime = new Date().getTime();
-var saveInterval = 120000;
+var saveInterval = 15000;
 
 document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener("keydown", function (event) {
@@ -61,110 +60,159 @@ document.addEventListener('DOMContentLoaded', function () {
     function volumeUp() { player.volume(Math.min(1, player.volume() + 0.1)); }
     function volumeDown() { player.volume(Math.max(0, player.volume() - 0.1)); }
 
-    var gistFilename = 'video_progress.json';
     var isVideoPaused = false;
-    var username = sessionStorage.getItem('githubUsername');
-    var gistId = sessionStorage.getItem('githubGistId');
-    var accessToken = sessionStorage.getItem('githubAccessToken');
 
-    if (!username || !gistId || !accessToken) {
-        if (!document.getElementById('fileInput') && !document.getElementById('credBtn')) {
-            var fileInput = document.createElement('input');
-            fileInput.id = 'fileInput';
-            fileInput.type = 'file';
-            fileInput.accept = '.txt';
-            fileInput.style.display = 'none';
-            fileInput.addEventListener('change', function(event) {
-                var file = event.target.files[0];
-                if (file) {
-                    var reader = new FileReader();
-                    reader.onload = function(e) { processFileContent(e.target.result); };
-                    reader.readAsText(file);
-                }
-            });
-            document.body.appendChild(fileInput);
-            var button = document.createElement('button');
-            button.textContent = 'Load GitHub credentials (.txt)';
-            button.id = 'credBtn';
-            button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
-            button.addEventListener('click', function() { fileInput.click(); });
-            document.body.appendChild(button);
-        }
-    } else {
-        setupVideoPlayback();
-    }
+    // ---- dead source recovery state ------------------------------------
+    var loadGraceMs = 10000;   // no metadata within this = suspect dead
+    var recoveryAttempts = 0;
+    var recoveryMax = 3;       // hard cap: a dead link must not loop forever
+    var recovering = false;
+    var pendingSeek = null;
+    var lastKnownProgress = 0;
+    var progressReady = false;
+    var pendingRecovery = null;
 
-    function processFileContent(content) {
-        var lines = content.split('\n');
-        lines.forEach(function(line) {
-            var parts = line.split('=');
-            if (parts.length === 2) {
-                var key = parts[0].trim().toLowerCase();
-                var value = parts[1].trim();
-                if (key === 'username') username = value;
-                else if (key === 'gist id') gistId = value;
-                else if (key === 'token') accessToken = value;
-            }
-        });
-        sessionStorage.setItem('githubUsername', username);
-        sessionStorage.setItem('githubGistId', gistId);
-        sessionStorage.setItem('githubAccessToken', accessToken);
+    SeriesAuth.require(function () {
         setupVideoPlayback();
-    }
+    });
 
     function setupVideoPlayback() {
-        function handleNetworkError() {
-            video.load();
-            fetch('https://api.github.com/gists/' + gistId)
-                .then(function(r){return r.json();})
-                .then(function(data){
-                    if (data.files && data.files[gistFilename]) {
-                        var progressData = JSON.parse(data.files[gistFilename].content);
-                        if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
-                    }
-                });
-        }
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+            if (progressData && progressData.progress) {
+                lastKnownProgress = parseFloat(progressData.progress);
+                seekTo(lastKnownProgress);
+            }
+            markProgressReady();
+        });
+        // Never let a slow progress read block dead-source recovery forever.
+        setTimeout(markProgressReady, 3000);
+        setInterval(saveProgress, saveInterval);
+
+        // A dead/unreachable source makes the browser fire an error; cover the
+        // network (2), decode (3) and unsupported-source (4) cases.
         video.addEventListener('error', function () {
-            if (video.error && video.error.code === 2) {
-                saveProgress();
-                setTimeout(function(){ handleNetworkError(); video.play(); }, 3000);
+            if (video.error && (video.error.code === 2 || video.error.code === 3 || video.error.code === 4)) {
+                recoverFromDeadSource('media error ' + video.error.code);
             }
         });
+
+        video.addEventListener('loadedmetadata', function () {
+            if (pendingSeek != null) {
+                seekTo(pendingSeek);
+                pendingSeek = null;
+            }
+            recoveryAttempts = 0;
+            recovering = false;
+        });
+
+        // With <source> children the error fires on the <source> element,
+        // not always on the video, so listen there too for fast detection.
+        var sourceEls = video.querySelectorAll('source');
+        for (var si = 0; si < sourceEls.length; si++) {
+            sourceEls[si].addEventListener('error', function () {
+                setTimeout(function () {
+                    if (video.readyState < 1) {
+                        recoverFromDeadSource('source unavailable');
+                    }
+                }, 500);
+            });
+        }
+
+        // Early detection: a dead source never produces metadata. Don't wait
+        // for the browser's slow error - check ourselves after a short grace.
+        setTimeout(function () {
+            if (!video.error && video.readyState < 1) {
+                recoverFromDeadSource('no media data after load');
+            }
+        }, loadGraceMs);
+
         video.addEventListener('timeupdate', function () {
             if (video.paused && !isVideoPaused) { isVideoPaused = true; saveProgress(); }
         });
         video.addEventListener('play', function () { isVideoPaused = false; });
-        fetch('https://api.github.com/gists/' + gistId)
-            .then(function(r){return r.json();})
-            .then(function(data){
-                if (data.files && data.files[gistFilename]) {
-                    var progressData = JSON.parse(data.files[gistFilename].content);
-                    if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
-                }
-            });
-        setInterval(saveProgress, saveInterval);
+    }
+
+    function markProgressReady() {
+        if (progressReady) return;
+        progressReady = true;
+        if (pendingRecovery) {
+            var reason = pendingRecovery;
+            pendingRecovery = null;
+            recoverFromDeadSource(reason);
+        }
     }
 
     function saveProgress() {
-        var currentTime = new Date().getTime();
-        var timeOnPage = (currentTime - pageLoadTime) / 1000;
-        var progressData = { "progress": video.currentTime, "url": window.location.href, "timeOnPage": timeOnPage };
-        var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
-        fetch('https://api.github.com/gists/' + gistId, {
-            method: 'PATCH',
-            headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
-            body: JSON.stringify(gistData)
-        }).then(function(r){return r.json();}).then(function(d){console.log('Progress saved:',d);}).catch(function(e){console.error('Save error:',e);});
+        if (recovering) return;
+        persistPosition(video.currentTime);
     }
 
-    window.addEventListener('beforeunload', function () {
-        sessionStorage.removeItem('githubUsername');
-        sessionStorage.removeItem('githubGistId');
-        sessionStorage.removeItem('githubAccessToken');
-    });
+    function persistPosition(pos) {
+        var creds = SeriesAuth.get();
+        if (!creds) return;
+        var now = new Date().getTime();
+        SeriesAuth.writeProgress(creds, {
+            "progress": pos,
+            "url": window.location.href,
+            "timeOnPage": (now - pageLoadTime) / 1000
+        });
+    }
+
+    function seekTo(t) {
+        if (typeof t !== 'number' || !isFinite(t) || t < 0) return;
+        try { video.currentTime = t; } catch (e) { pendingSeek = t; }
+    }
+
+    function recoverFromDeadSource(reason) {
+        if (!progressReady) { pendingRecovery = reason; return; }
+        if (recovering) return;
+        recovering = true;
+        var savedPos = video.currentTime || lastKnownProgress || 0;
+        persistPosition(savedPos);   // save BEFORE refreshing
+        console.warn('Dead video source (' + reason + '); saved ' + Math.round(savedPos) + 's, refreshing.');
+        refreshAndRestore(savedPos);
+    }
+
+    function refreshAndRestore(savedPos) {
+        pendingSeek = null;
+        video.load();
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+            var target = savedPos > 0 ? savedPos : ((progressData && progressData.progress) ? parseFloat(progressData.progress) : 0);
+            if (target) {
+                pendingSeek = target;
+                seekTo(target);
+            }
+            var p = video.play();
+            if (p && p.catch) p.catch(function () {});
+        });
+
+        var waited = 0;
+        var poll = setInterval(function () {
+            if (video.readyState >= 1) {
+                clearInterval(poll);
+                recovering = false;
+                recoveryAttempts = 0;
+            } else if (video.error) {
+                clearInterval(poll);
+                retryOrGiveUp(savedPos);
+            } else if ((waited += 400) >= 10000) {
+                clearInterval(poll);
+                retryOrGiveUp(savedPos);
+            }
+        }, 400);
+    }
+
+    function retryOrGiveUp(savedPos) {
+        recoveryAttempts += 1;
+        if (recoveryAttempts < recoveryMax) {
+            setTimeout(function () { refreshAndRestore(savedPos); }, recoveryAttempts * 2000);
+        } else {
+            recovering = false;
+            console.error('Video source is dead after ' + recoveryMax + ' attempts; progress saved at ' + Math.round(savedPos) + 's.');
+        }
+    }
 });
 
-            
     function downloadVideo() {
       var video = document.getElementById('my-video');
       var sourceEl = video.querySelector('source');
@@ -174,7 +222,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       var videoUrl = sourceEl.src;
       var fileName = videoUrl.split('/').pop() || 'video.mp4';
-      
+
       var a = document.createElement('a');
       a.href = videoUrl;
       a.download = fileName;
@@ -183,8 +231,7 @@ document.addEventListener('DOMContentLoaded', function () {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-    }
-</script>
+    }</script>
 
 </body>
 </html>

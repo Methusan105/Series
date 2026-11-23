@@ -39,6 +39,55 @@ body {
   padding: 0 10px;
 }
 .season-card::before { content:""; position:absolute; inset:0; background:linear-gradient(120deg,transparent,rgba(229,9,20,.4),transparent); transform:translateX(-100%); transition:transform .7s ease; }
+.resume-btn {
+  display: block;
+  margin: 16px auto 0;
+  padding: 12px 32px;
+  background: linear-gradient(135deg, var(--accent), rgba(229, 9, 20, 0.55));
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  transition: transform .2s, box-shadow .2s;
+  box-shadow: 0 4px 16px rgba(229, 9, 20, 0.4);
+}
+.resume-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(229, 9, 20, 0.6);
+}
+.resume-btn:active {
+  transform: translateY(0);
+}
 .season-card:hover { transform:translateY(-8px) scale(1.02); border-color:var(--accent); box-shadow:0 16px 40px rgba(229,9,20,.3), inset 0 1px 0 rgba(255,255,255,.25); }
 .season-card:hover::before { transform:translateX(100%); }
 .season-card span { position:relative; z-index:1; text-shadow:0 2px 8px rgba(0,0,0,.5); display:block; line-height:1.35; }
+
+/* Sign out (injected by Playback.js on every page) */
+.sign-out-btn {
+  padding: 10px 18px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all .2s;
+}
+.sign-out-btn:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,.06); }
+.sign-out-btn--floating {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: rgba(20,20,20,.9);
+  border: 1px solid rgba(255,255,255,.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 20px rgba(0,0,0,.4);
+}
+@media (max-width:640px) { .sign-out-btn--floating { right: 12px; bottom: 12px; } }
