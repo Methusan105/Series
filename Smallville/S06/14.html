@@ -39,7 +39,7 @@ var video = document.getElementById('my-video');
 var player = videojs("my-video");
 var spacePressed = false;
 var pageLoadTime = new Date().getTime();
-var saveInterval = 120000;
+var saveInterval = 15000;
 
 document.addEventListener('DOMContentLoaded', function () {
     document.addEventListener("keydown", function (event) {
@@ -61,68 +61,18 @@ document.addEventListener('DOMContentLoaded', function () {
     function volumeUp() { player.volume(Math.min(1, player.volume() + 0.1)); }
     function volumeDown() { player.volume(Math.max(0, player.volume() - 0.1)); }
 
-    var gistFilename = 'video_progress.json';
     var isVideoPaused = false;
-    var username = sessionStorage.getItem('githubUsername');
-    var gistId = sessionStorage.getItem('githubGistId');
-    var accessToken = sessionStorage.getItem('githubAccessToken');
 
-    if (!username || !gistId || !accessToken) {
-        if (!document.getElementById('fileInput') && !document.getElementById('credBtn')) {
-            var fileInput = document.createElement('input');
-            fileInput.id = 'fileInput';
-            fileInput.type = 'file';
-            fileInput.accept = '.txt';
-            fileInput.style.display = 'none';
-            fileInput.addEventListener('change', function(event) {
-                var file = event.target.files[0];
-                if (file) {
-                    var reader = new FileReader();
-                    reader.onload = function(e) { processFileContent(e.target.result); };
-                    reader.readAsText(file);
-                }
-            });
-            document.body.appendChild(fileInput);
-            var button = document.createElement('button');
-            button.textContent = 'Load GitHub credentials (.txt)';
-            button.id = 'credBtn';
-            button.style.cssText = 'position:fixed;bottom:12px;right:12px;padding:10px 16px;background:#e50914;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9999;font-weight:700';
-            button.addEventListener('click', function() { fileInput.click(); });
-            document.body.appendChild(button);
-        }
-    } else {
+    SeriesAuth.require(function () {
         setupVideoPlayback();
-    }
-
-    function processFileContent(content) {
-        var lines = content.split('\n');
-        lines.forEach(function(line) {
-            var parts = line.split('=');
-            if (parts.length === 2) {
-                var key = parts[0].trim().toLowerCase();
-                var value = parts[1].trim();
-                if (key === 'username') username = value;
-                else if (key === 'gist id') gistId = value;
-                else if (key === 'token') accessToken = value;
-            }
-        });
-        sessionStorage.setItem('githubUsername', username);
-        sessionStorage.setItem('githubGistId', gistId);
-        sessionStorage.setItem('githubAccessToken', accessToken);
-        setupVideoPlayback();
-    }
+    });
 
     function setupVideoPlayback() {
         function handleNetworkError() {
             video.load();
-            fetch('https://api.github.com/gists/' + gistId)
-                .then(function(r){return r.json();})
-                .then(function(data){
-                    if (data.files && data.files[gistFilename]) {
-                        var progressData = JSON.parse(data.files[gistFilename].content);
-                        if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
-                    }
-                });
+            SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+                if (progressData && progressData.progress) video.currentTime = parseFloat(progressData.progress);
+            });
         }
         video.addEventListener('error', function () {
             if (video.error && video.error.code === 2) {
@@ -134,37 +84,22 @@ document.addEventListener('DOMContentLoaded', function () {
             if (video.paused && !isVideoPaused) { isVideoPaused = true; saveProgress(); }
         });
         video.addEventListener('play', function () { isVideoPaused = false; });
-        fetch('https://api.github.com/gists/' + gistId)
-            .then(function(r){return r.json();})
-            .then(function(data){
-                if (data.files && data.files[gistFilename]) {
-                    var progressData = JSON.parse(data.files[gistFilename].content);
-                    if (progressData.progress) video.currentTime = parseFloat(progressData.progress);
-                }
-            });
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+            if (progressData && progressData.progress) video.currentTime = parseFloat(progressData.progress);
+        });
         setInterval(saveProgress, saveInterval);
     }
 
     function saveProgress() {
+        var creds = SeriesAuth.get();
+        if (!creds) return;
         var currentTime = new Date().getTime();
         var timeOnPage = (currentTime - pageLoadTime) / 1000;
         var progressData = { "progress": video.currentTime, "url": window.location.href, "timeOnPage": timeOnPage };
-        var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
-        fetch('https://api.github.com/gists/' + gistId, {
-            method: 'PATCH',
-            headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
-            body: JSON.stringify(gistData)
-        }).then(function(r){return r.json();}).then(function(d){console.log('Progress saved:',d);}).catch(function(e){console.error('Save error:',e);});
+        SeriesAuth.writeProgress(creds, progressData);
     }
-
-    window.addEventListener('beforeunload', function () {
-        sessionStorage.removeItem('githubUsername');
-        sessionStorage.removeItem('githubGistId');
-        sessionStorage.removeItem('githubAccessToken');
-    });
 });
 
-            
     function downloadVideo() {
       var video = document.getElementById('my-video');
       var sourceEl = video.querySelector('source');
@@ -174,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       var videoUrl = sourceEl.src;
       var fileName = videoUrl.split('/').pop() || 'video.mp4';
-      
+
       var a = document.createElement('a');
       a.href = videoUrl;
       a.download = fileName;

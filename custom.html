@@ -59,14 +59,16 @@ document.addEventListener("keydown", function (event) {
   else if (event.key === "ArrowRight") { player.currentTime(player.currentTime() + 5); }
 });
 
-var gistFilename = 'video_progress.json';
-var username = sessionStorage.getItem('githubUsername');
-var gistId = sessionStorage.getItem('githubGistId');
-var accessToken = sessionStorage.getItem('githubAccessToken');
+var saveInterval = 15000;
 var lastSavedTime = -1;
 
+SeriesAuth.require(function () {
+  loadProgress();
+});
+
 function saveProgress(force) {
-  if (!username || !gistId || !accessToken) return;
+  var creds = SeriesAuth.get();
+  if (!creds) return;
   var now = player.currentTime();
   if (!force && Math.abs(now - lastSavedTime) < 2) return;
   lastSavedTime = now;
@@ -75,40 +77,22 @@ function saveProgress(force) {
     "url": window.location.href,
     "timeOnPage": (Date.now() - (window.__pageLoadTime || Date.now())) / 1000
   };
-  var gistData = { "files": { [gistFilename]: { "content": JSON.stringify(progressData, null, 2) } } };
-  fetch("https://api.github.com/gists/" + gistId, {
-    method: 'PATCH',
-    headers: { 'Authorization': 'token ' + accessToken, 'Content-Type': 'application/json' },
-    body: JSON.stringify(gistData)
-  }).then(function(r){ return r.json(); }).then(function(d){ console.log('Progress saved:', d); }).catch(function(e){ console.error('Save error:', e); });
+  SeriesAuth.writeProgress(creds, progressData);
 }
 
 function loadProgress() {
-  if (!username || !gistId || !accessToken) return;
-  fetch("https://api.github.com/gists/" + gistId)
-    .then(function(r){ return r.json(); }).then(function(data) {
-      if (data.files && data.files[gistFilename]) {
-        try {
-          var pd = JSON.parse(data.files[gistFilename].content);
-          if (pd.progress) player.currentTime(parseFloat(pd.progress));
-        } catch(e) {}
-      }
-    }).catch(function(e){ console.error('Load progress error:', e); });
+  SeriesAuth.fetchProgress(SeriesAuth.get(), function (pd) {
+    if (pd && pd.progress) player.currentTime(parseFloat(pd.progress));
+  });
 }
 
 function handleNetworkError() {
   console.log('Network error, reloading video...');
   player.load();
-  fetch("https://api.github.com/gists/" + gistId)
-    .then(function(r){ return r.json(); }).then(function(data) {
-      if (data.files && data.files[gistFilename]) {
-        try {
-          var pd = JSON.parse(data.files[gistFilename].content);
-          if (pd.progress) player.currentTime(parseFloat(pd.progress));
-        } catch(e) {}
-      }
-      player.play();
-    });
+  SeriesAuth.fetchProgress(SeriesAuth.get(), function (pd) {
+    if (pd && pd.progress) player.currentTime(parseFloat(pd.progress));
+    player.play();
+  });
 }
 
 player.on("error", function () {
@@ -120,19 +104,13 @@ player.on("error", function () {
 
 player.on("pause", function () { saveProgress(true); });
 player.on("ended", function () { saveProgress(true); });
-player.on("play", function () {});
 
 window.__pageLoadTime = Date.now();
 
-if (username && gistId && accessToken) {
-  loadProgress();
-}
+setInterval(function () { saveProgress(false); }, saveInterval);
 
 window.addEventListener('beforeunload', function () {
   saveProgress(true);
-  sessionStorage.removeItem('githubUsername');
-  sessionStorage.removeItem('githubGistId');
-  sessionStorage.removeItem('githubAccessToken');
 });
 
   </script>
