@@ -62,45 +62,152 @@ document.addEventListener("keydown", function (event) {
 var saveInterval = 15000;
 var lastSavedTime = -1;
 
+// Dead source recovery state
+var loadGraceMs = 10000;   // no metadata within this = suspect dead
+var recoveryAttempts = 0;
+var recoveryMax = 3;       // hard cap: a dead link must not loop forever
+var recovering = false;
+var pendingSeek = null;
+var lastKnownProgress = 0;
+var progressReady = false;
+var pendingRecovery = null;
+
 SeriesAuth.require(function () {
   loadProgress();
 });
 
 function saveProgress(force) {
+  if (recovering) return;
   var creds = SeriesAuth.get();
   if (!creds) return;
   var now = player.currentTime();
   if (!force && Math.abs(now - lastSavedTime) < 2) return;
   lastSavedTime = now;
-  var progressData = {
-    "progress": now,
+  persistPosition(now);
+}
+
+function persistPosition(pos) {
+  var creds = SeriesAuth.get();
+  if (!creds) return;
+  SeriesAuth.writeProgress(creds, {
+    "progress": pos,
     "url": window.location.href,
     "timeOnPage": (Date.now() - (window.__pageLoadTime || Date.now())) / 1000
-  };
-  SeriesAuth.writeProgress(creds, progressData);
+  });
+}
+
+function seekTo(t) {
+  if (typeof t !== 'number' || !isFinite(t) || t < 0) return;
+  try { player.currentTime(t); } catch (e) { pendingSeek = t; }
 }
 
 function loadProgress() {
   SeriesAuth.fetchProgress(SeriesAuth.get(), function (pd) {
-    if (pd && pd.progress) player.currentTime(parseFloat(pd.progress));
+    if (pd && pd.progress) {
+      lastKnownProgress = parseFloat(pd.progress);
+      seekTo(lastKnownProgress);
+    }
+    markProgressReady();
   });
+  // Never let a slow progress read block dead-source recovery forever.
+  setTimeout(markProgressReady, 3000);
 }
 
-function handleNetworkError() {
-  console.log('Network error, reloading video...');
+function markProgressReady() {
+  if (progressReady) return;
+  progressReady = true;
+  if (pendingRecovery) {
+    var reason = pendingRecovery;
+    pendingRecovery = null;
+    recoverFromDeadSource(reason);
+  }
+}
+
+function recoverFromDeadSource(reason) {
+  if (!progressReady) { pendingRecovery = reason; return; }
+  if (recovering) return;
+  recovering = true;
+  var savedPos = player.currentTime() || lastKnownProgress || 0;
+  persistPosition(savedPos);   // save BEFORE refreshing
+  console.warn('Dead video source (' + reason + '); saved ' + Math.round(savedPos) + 's, refreshing.');
+  refreshAndRestore(savedPos);
+}
+
+function refreshAndRestore(savedPos) {
+  pendingSeek = null;
   player.load();
   SeriesAuth.fetchProgress(SeriesAuth.get(), function (pd) {
-    if (pd && pd.progress) player.currentTime(parseFloat(pd.progress));
-    player.play();
+    var target = savedPos > 0 ? savedPos : ((pd && pd.progress) ? parseFloat(pd.progress) : 0);
+    if (target) {
+      pendingSeek = target;
+      seekTo(target);
+    }
+    var p = player.play();
+    if (p && p.catch) p.catch(function () {});
+  });
+
+  var waited = 0;
+  var poll = setInterval(function () {
+    if (player.readyState() >= 1) {
+      clearInterval(poll);
+      recovering = false;
+      recoveryAttempts = 0;
+    } else if (player.error()) {
+      clearInterval(poll);
+      retryOrGiveUp(savedPos);
+    } else if ((waited += 400) >= 10000) {
+      clearInterval(poll);
+      retryOrGiveUp(savedPos);
+    }
+  }, 400);
+}
+
+function retryOrGiveUp(savedPos) {
+  recoveryAttempts += 1;
+  if (recoveryAttempts < recoveryMax) {
+    setTimeout(function () { refreshAndRestore(savedPos); }, recoveryAttempts * 2000);
+  } else {
+    recovering = false;
+    console.error('Video source is dead after ' + recoveryMax + ' attempts; progress saved at ' + Math.round(savedPos) + 's.');
+  }
+}
+
+player.on("loadedmetadata", function () {
+  if (pendingSeek != null) {
+    seekTo(pendingSeek);
+    pendingSeek = null;
+  }
+  recoveryAttempts = 0;
+  recovering = false;
+});
+
+player.on("error", function () {
+  var err = player.error();
+  if (err && (err.code === 2 || err.code === 3 || err.code === 4)) {
+    recoverFromDeadSource('media error ' + err.code);
+  }
+});
+
+// With <source> children the error fires on the <source> element, not always
+// on the video, so listen there too for near-instant detection.
+var customSourceEls = player.el().querySelectorAll('source');
+for (var csi = 0; csi < customSourceEls.length; csi++) {
+  customSourceEls[csi].addEventListener('error', function () {
+    setTimeout(function () {
+      if (player.readyState() < 1) {
+        recoverFromDeadSource('source unavailable');
+      }
+    }, 500);
   });
 }
 
-player.on("error", function () {
-  if (player.error() && player.error().code === 2) {
-    saveProgress(true);
-    setTimeout(handleNetworkError, 3000);
+// Early detection: a dead source never produces metadata. Don't wait for the
+// browser's slow error - check ourselves after a short grace.
+setTimeout(function () {
+  if (!player.error() && player.readyState() < 1) {
+    recoverFromDeadSource('no media data after load');
   }
-});
+}, loadGraceMs);
 
 player.on("pause", function () { saveProgress(true); });
 player.on("ended", function () { saveProgress(true); });
