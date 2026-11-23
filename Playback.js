@@ -116,19 +116,32 @@ var SeriesAuth = (function () {
     window.location.reload();
   }
 
+  function ensureFloatingStyles() {
+    if (document.getElementById('signOutStyle')) return;
+    var st = document.createElement('style');
+    st.id = 'signOutStyle';
+    st.textContent = '.sign-out-btn--floating{position:fixed;right:20px;bottom:20px;z-index:9999;margin:0;padding:10px 20px;border-radius:999px;background:rgba(20,20,20,.9);color:#e5e5e5;border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 6px 20px rgba(0,0,0,.4);cursor:pointer;font-size:14px}@media(max-width:640px){.sign-out-btn--floating{right:12px;bottom:12px}}';
+    document.head.appendChild(st);
+  }
+
   function mountSignOut() {
     if (document.getElementById('signOutBtn')) return;
     var footer = document.querySelector('.player-footer');
-    if (!footer) return;
     var btn = document.createElement('button');
     btn.id = 'signOutBtn';
     btn.type = 'button';
     btn.textContent = 'Sign out';
-    btn.style.cssText = 'background:transparent;border:1px solid #555;color:#aaa;border-radius:4px;padding:6px 12px;cursor:pointer;font-size:12px;margin-left:8px';
+    btn.className = 'sign-out-btn';
     btn.addEventListener('click', function () {
       if (confirm('Sign out on this browser?')) signOut();
     });
-    footer.appendChild(btn);
+    if (footer) {
+      footer.appendChild(btn);
+    } else {
+      ensureFloatingStyles();
+      btn.className += ' sign-out-btn--floating';
+      document.body.appendChild(btn);
+    }
   }
 
   function showOverlay(afterLogin) {
@@ -361,5 +374,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (defaultPlayer && typeof defaultPlayer.on === 'function') {
       setupEpisodeAutoAdvance(defaultPlayer);
     }
+  }
+  // Mount sign-out button if user is already logged in
+  if (SeriesAuth.get()) {
+    SeriesAuth.mountSignOut();
   }
 });

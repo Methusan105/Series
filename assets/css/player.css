@@ -12,8 +12,37 @@ video#my-video{width:100%;height:auto;background:#000;border-radius:10px;display
 .next-episode{padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:15px;text-decoration:none;display:inline-block;transition:background .2s,transform .1s}
 .next-episode:hover{background:var(--accent-hover);transform:translateY(-1px)}
 .next-episode:disabled{opacity:.55;cursor:not-allowed;transform:none}
-.clear-btn{padding:10px 18px;background:transparent;color:var(--muted);border:1px solid var(--muted);border-radius:6px;cursor:pointer;font-size:14px;transition:all .2s}
-.clear-btn:hover{color:#fff;border-color:#fff;background:rgba(255,255,255,.06)}
+.sign-out-btn {
+  padding: 10px 18px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all .2s;
+  margin-left: 8px;
+}
+.sign-out-btn:hover {
+  color: #fff;
+  border-color: #fff;
+  background: rgba(255, 255, 255, .06);
+}
+.sign-out-btn--floating {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  margin-left: 0;
+  padding: 10px 20px;
+  border-radius: 999px;
+  background: rgba(20, 20, 20, .9);
+  border: 1px solid rgba(255, 255, 255, .2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+}
+@media (max-width: 640px) { .sign-out-btn--floating { right: 12px; bottom: 12px; } }
 .preload-btn{padding:10px 18px;background:linear-gradient(135deg,#007bff,#0056b3);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:700;transition:all .2s}
 .preload-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,123,255,.4)}
 .preload-btn:disabled{cursor:not-allowed;opacity:.8}
