@@ -1,4 +1,72 @@
 // ============================================================
+// Device detection - tags <html> with device-tv / device-mobile /
+// device-desktop plus has-touch / no-touch and is-fullscreen.
+// player.css uses these classes instead of raw screen-width media
+// queries so a 1080p desktop fullscreen is not treated like a TV.
+// Override with ?device=tv|mobile|desktop (or localStorage.seriesDevice).
+// ============================================================
+(function detectSeriesDevice() {
+  var root = document.documentElement;
+  if (!root) return;
+
+  var override = '';
+  var search = (window.location && window.location.search) || '';
+  var match = /[?&]device=([a-z]+)/i.exec(search);
+  if (match) override = match[1].toLowerCase();
+  if (!override) {
+    try { override = String(localStorage.getItem('seriesDevice') || '').toLowerCase(); } catch (e) {}
+  }
+
+  var ua = String(navigator.userAgent || '').toLowerCase();
+  var tvTokens = ['appletv', 'googletv', 'tizen', 'webtv', 'webos', 'viera', 'smarttv', 'hbbtv', 'netcast', 'net tv', 'bravia', 'aftb', 'aftm', 'aftt', 'fire tv', 'roku', 'crkey', 'chromecast'];
+  var isTv = /(^|[^a-z])tv([^a-z]|$)/.test(ua) || tvTokens.some(function (token) { return ua.indexOf(token) !== -1; });
+  if (!isTv && window.matchMedia) {
+    try { isTv = window.matchMedia('(display-mode: tv)').matches; } catch (e) {}
+  }
+
+  var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+  var isMobileUA = /mobile|android|iphone|ipad|ipod|iemobile|blackberry|opera mini|windows phone/i.test(ua);
+  var sw = window.screen ? window.screen.width : 9999;
+  var sh = window.screen ? window.screen.height : 9999;
+  var smallScreen = Math.min(sw, sh) <= 820;
+  var isMobile = !isTv && (isMobileUA || (isTouch && smallScreen));
+
+  var device = override === 'tv' || override === 'mobile' || override === 'desktop'
+    ? override
+    : (isTv ? 'tv' : (isMobile ? 'mobile' : 'desktop'));
+
+  function setClass(name, on) {
+    if (!root.classList) return;
+    if (on) root.classList.add(name);
+    else root.classList.remove(name);
+  }
+
+  setClass('device-tv', false);
+  setClass('device-mobile', false);
+  setClass('device-desktop', false);
+  setClass('device-' + device, true);
+  setClass('has-touch', !!isTouch);
+  setClass('no-touch', !isTouch);
+
+  function syncFullscreen() {
+    var fs = document.fullscreenElement || document.webkitFullscreenElement ||
+      document.mozFullScreenElement || document.msFullscreenElement;
+    setClass('is-fullscreen', !!fs);
+  }
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(function (evt) {
+    document.addEventListener(evt, syncFullscreen, false);
+  });
+  syncFullscreen();
+
+  window.SeriesDevice = {
+    type: device,
+    isTv: device === 'tv',
+    isMobile: device === 'mobile',
+    isTouch: !!isTouch
+  };
+})();
+
+// ============================================================
 // SeriesAuth - persistent (Netflix-style) GitHub Gist sign-in
 // Creds are stored in localStorage so you only sign in once
 // per browser. sessionStorage keys are mirrored for backwards
