@@ -76,7 +76,7 @@
           }
           document.body.appendChild(spinner);
 
-          SeriesAuth.require(function () {
+          SeriesAuth.requireFresh(function () {
             SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
               spinner.remove();
               if (progressData && progressData.url) {

@@ -12,6 +12,8 @@ video#my-video{width:100%;height:auto;background:#000;border-radius:10px;display
 .next-episode{padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:15px;text-decoration:none;display:inline-block;transition:background .2s,transform .1s}
 .next-episode:hover{background:var(--accent-hover);transform:translateY(-1px)}
 .next-episode:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.clear-btn{padding:10px 18px;background:transparent;color:var(--muted);border:1px solid var(--muted);border-radius:6px;cursor:pointer;font-size:14px;transition:all .2s}
+.clear-btn:hover{color:#fff;border-color:#fff;background:rgba(255,255,255,.06)}
 .sign-out-btn {
   padding: 10px 18px;
   background: transparent;

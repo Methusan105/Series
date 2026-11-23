@@ -111,6 +111,12 @@ var SeriesAuth = (function () {
     showOverlay(function (newCreds) { cb(newCreds); });
   }
 
+  // Always show the sign-in overlay (used by "Resume Playback" so the
+  // user can confirm credentials or import a .txt file each time).
+  function requireFresh(cb) {
+    showOverlay(function (newCreds) { cb(newCreds); });
+  }
+
   function signOut() {
     clear();
     window.location.reload();
@@ -183,10 +189,11 @@ var SeriesAuth = (function () {
     var siImport = overlay.querySelector('#siImport');
     var siFile = overlay.querySelector('#siFile');
 
-    // Prefill from sessionStorage (legacy) if present
-    siUser.value = sessionStorage.getItem(LEGACY_KEYS.username) || '';
-    siGist.value = sessionStorage.getItem(LEGACY_KEYS.gistId) || '';
-    siToken.value = sessionStorage.getItem(LEGACY_KEYS.token) || '';
+    // Prefill from saved credentials (localStorage) or legacy sessionStorage
+    var saved = get() || {};
+    siUser.value = saved.username || sessionStorage.getItem(LEGACY_KEYS.username) || '';
+    siGist.value = saved.gistId || sessionStorage.getItem(LEGACY_KEYS.gistId) || '';
+    siToken.value = saved.token || sessionStorage.getItem(LEGACY_KEYS.token) || '';
 
     function setStatus(text, color) {
       siStatus.textContent = text;
@@ -267,6 +274,7 @@ var SeriesAuth = (function () {
     writeProgress: writeProgress,
     clearProgress: clearProgress,
     require: require,
+    requireFresh: requireFresh,
     signOut: signOut,
     mountSignOut: mountSignOut
   };
