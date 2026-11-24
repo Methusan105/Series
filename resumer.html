@@ -8,15 +8,14 @@
   <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
   <style>
     :root {
-      --bg: #05070d;
-      --panel: rgba(255, 255, 255, 0.025);
+      --bg: #0a0a0a;
+      --panel: #141414;
       --accent: #e50914;
       --accent-hover: #f40612;
-      --text: #ffffff;
-      --muted: #c9c9c9;
-      --border: rgba(255, 255, 255, 0.1);
-      --highlight: rgba(255, 255, 255, 0.8);
-      --radius: 34px;
+      --text: #e5e5e5;
+      --muted: #a5a5a5;
+      --border: #333;
+      --radius: 16px;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -36,36 +35,9 @@
       content: "";
       position: absolute;
       inset: 0;
-      z-index: -3;
-      background:
-        radial-gradient(1600px 900px at 20% 0%, rgba(34, 52, 90, 0.8), transparent 55%),
-        radial-gradient(1300px 700px at 80% 110%, rgba(52, 14, 24, 0.8), transparent 55%);
-      background-size: 240% 240%;
-      animation: mesh 20s ease infinite alternate;
+      background:#0a0a0a;
       pointer-events: none;
-    }
-    body::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -2;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.22'/%3E%3C/svg%3E");
-      opacity: 0.6;
-      pointer-events: none;
-    }
-    @keyframes mesh {
-      0% { background-position: 0% 0%; }
-      100% { background-position: 100% 100%; }
-    }
-    .glass-blob{
-      position:fixed;z-index:-1;border-radius:50%;filter:blur(72px);opacity:0.5;pointer-events:none;
-    }
-    .glass-blob--1{top:8%;left:8%;width:800px;height:800px;background:radial-gradient(circle,rgba(229,9,20,0.35),transparent 60%);animation:blobFloat 16s ease-in-out infinite alternate;}
-    .glass-blob--2{bottom:12%;right:8%;width:700px;height:700px;background:radial-gradient(circle,rgba(40,80,140,0.35),transparent 60%);animation:blobFloat 20s ease-in-out infinite alternate 2s;}
-    .glass-blob--3{top:35%;left:52%;width:600px;height:600px;background:radial-gradient(circle,rgba(120,0,0,0.3),transparent 60%);animation:blobFloat 18s ease-in-out infinite alternate 4s;}
-    @keyframes blobFloat{
-      0%{transform:translate(0,0) scale(1);}
-      100%{transform:translate(45px,-35px) scale(1.18);}
+      z-index: 0;
     }
     body {
       z-index: 1;
@@ -73,58 +45,33 @@
     .card {
       position: relative;
       z-index: 2;
-      width: min(460px, 94vw);
-      padding: 60px 46px;
+      width: min(420px, 90vw);
+      padding: 48px 40px;
       border-radius: var(--radius);
       background: var(--panel);
       border: 1px solid var(--border);
-      box-shadow: 0 40px 110px rgba(0, 0, 0, 0.7), inset 0 1px 0 var(--highlight);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
       text-align: center;
-      animation: cardIn 0.7s cubic-bezier(.23,1,.32,1);
-      backdrop-filter: blur(72px) saturate(2);
-      -webkit-backdrop-filter: blur(72px) saturate(2);
+      animation: cardIn 0.4s ease;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       overflow: hidden;
     }
-    .card::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      padding: 1px;
-      background: linear-gradient(135deg, rgba(255,255,255,0.5), rgba(229,9,20,0.4), rgba(255,255,255,0.2));
-      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-      -webkit-mask-composite: destination-out;
-      mask-composite: exclude;
-      pointer-events: none;
-      opacity: 0.8;
-    }
-    .card::after {
-      content: "";
-      position: absolute;
-      top: -50px; left: -50px;
-      width: 200px; height: 200px;
-      background: radial-gradient(circle, rgba(229, 9, 20, 0.4), transparent 60%);
-      border-radius: 50%;
-      filter: blur(32px);
-      pointer-events: none;
-    }
     @keyframes cardIn {
-      from { opacity: 0; transform: translateY(16px); }
+      from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
     .logo {
-      width: 72px;
-      height: 72px;
-      margin: 0 auto 30px;
-      border-radius: 20px;
-      background: linear-gradient(135deg, var(--accent), rgba(229, 9, 20, 0.6));
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 18px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--accent), rgba(229, 9, 20, 0.55));
       display: flex;
       align-items: center;
       justify-content: center;
       color: #fff;
-      box-shadow: 0 0 44px rgba(229, 9, 20, 0.65), inset 0 1px 0 var(--highlight);
-      position: relative;
-      z-index: 1;
+      box-shadow: 0 0 30px rgba(229, 9, 20, 0.4);
     }
     .logo svg {
       width: 34px;
@@ -183,9 +130,6 @@
   </style>
 </head>
 <body>
-  <div class="glass-blob glass-blob--1"></div>
-  <div class="glass-blob glass-blob--2"></div>
-  <div class="glass-blob glass-blob--3"></div>
   <div class="card">
     <div class="logo" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

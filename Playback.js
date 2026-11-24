@@ -278,7 +278,7 @@ var SeriesAuth = (function () {
     if (document.getElementById('signOutStyle')) return;
     var st = document.createElement('style');
     st.id = 'signOutStyle';
-    st.textContent = '.sign-out-btn--floating{position:fixed;right:32px;bottom:32px;z-index:9999;margin:0;padding:12px 24px;border-radius:999px;background:rgba(10,10,10,.45);color:var(--text,#ffffff);border:1px solid var(--glass-border,rgba(255,255,255,.12));backdrop-filter:blur(52px)saturate(1.7);-webkit-backdrop-filter:blur(52px)saturate(1.7);box-shadow:0 24px 64px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.7);cursor:pointer;font-size:14px}@media(max-width:640px){.sign-out-btn--floating{right:16px;bottom:16px}}';
+    st.textContent = '.sign-out-btn--floating{position:fixed;right:20px;bottom:20px;z-index:9999;margin:0;padding:10px 20px;border-radius:999px;background:rgba(20,20,20,.85);color:#e5e5e5;border:1px solid rgba(255,255,255,.2);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 6px 20px rgba(0,0,0,.4);cursor:pointer;font-size:14px}@media(max-width:640px){.sign-out-btn--floating{right:12px;bottom:12px}}';
     document.head.appendChild(st);
   }
 
@@ -309,27 +309,24 @@ var SeriesAuth = (function () {
     overlay.id = 'seriesAuthOverlay';
     overlay.style.cssText = [
       'position:fixed', 'inset:0', 'z-index:99999',
-      'background:rgba(5,7,13,0.7)', 'backdrop-filter:blur(64px)saturate(1.9)', '-webkit-backdrop-filter:blur(64px)saturate(1.9)',
+      'background:rgba(0,0,0,0.88)', 'backdrop-filter:blur(12px)', '-webkit-backdrop-filter:blur(12px)',
       'display:flex', 'align-items:center', 'justify-content:center',
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif'
     ].join(';');
 
     overlay.innerHTML = [
-      '<div style="width:min(460px,94vw);background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.1);border-radius:34px;padding:60px 46px;box-shadow:0 40px 110px rgba(0,0,0,0.7),inset 0 1px 0 rgba(255,255,255,0.8);color:#ffffff;box-sizing:border-box;backdrop-filter:blur(72px)saturate(2);-webkit-backdrop-filter:blur(72px)saturate(2);position:relative;overflow:hidden">',
-      '  <div style="position:absolute;top:-50px;left:-50px;width:200px;height:200px;background:radial-gradient(circle,rgba(229,9,20,0.4),transparent 60%);border-radius:50%;filter:blur(32px);pointer-events:none"></div>',
-      '  <div style="position:absolute;bottom:-40px;right:-40px;width:180px;height:180px;background:radial-gradient(circle,rgba(40,80,140,0.35),transparent 60%);border-radius:50%;filter:blur(28px);pointer-events:none"></div>',
-      '  <div style="position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(135deg,rgba(255,255,255,0.5),rgba(229,9,20,0.4),rgba(255,255,255,0.2));-webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);-webkit-mask-composite:destination-out;mask-composite:exclude;pointer-events:none;opacity:0.8"></div>',
-      '  <div style="width:72px;height:72px;margin:0 auto 30px;border-radius:20px;background:linear-gradient(135deg,#e50914,rgba(229,9,20,0.6));display:flex;align-items:center;justify-content:center;box-shadow:0 0 44px rgba(229,9,20,0.65),inset 0 1px 0 rgba(255,255,255,0.6);position:relative;z-index:1">',
-      '    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,4 20,12 6,20" fill="#fff" stroke="none"/></svg>',
+      '<div style="width:min(420px,90vw);background:#141414;border:1px solid #333;border-radius:16px;padding:40px 36px;box-shadow:0 20px 60px rgba(0,0,0,0.7);color:#e5e5e5;box-sizing:border-box;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);position:relative;overflow:hidden">',
+      '  <div style="width:64px;height:64px;margin:0 auto 18px;border-radius:16px;background:linear-gradient(135deg,#e50914,rgba(229,9,20,0.55));display:flex;align-items:center;justify-content:center;box-shadow:0 0 30px rgba(229,9,20,0.4);position:relative;z-index:1">',
+      '    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,4 20,12 6,20" fill="#fff" stroke="none"/></svg>',
       '  </div>',
-      '  <h2 style="margin:0 0 8px;font-size:28px;font-weight:900;text-align:center;color:#ffffff;position:relative;z-index:1">Sign in</h2>',
-      '  <p style="margin:0 0 32px;text-align:center;color:#c9c9c9;font-size:15px;position:relative;z-index:1">Sync your watch progress across devices</p>',
-      '  <input id="siUser" type="text" placeholder="GitHub username" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:12px;padding:16px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:16px;color:#ffffff;font-size:16px;outline:none;backdrop-filter:blur(32px);-webkit-backdrop-filter:blur(32px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.4)" />',
-      '  <input id="siGist" type="text" placeholder="Gist ID" style="width:100%;box-sizing:border-box;margin-bottom:12px;padding:16px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:16px;color:#ffffff;font-size:16px;outline:none;backdrop-filter:blur(32px);-webkit-backdrop-filter:blur(32px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.4)" />',
-      '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:20px;padding:16px 18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:16px;color:#ffffff;font-size:16px;outline:none;backdrop-filter:blur(32px);-webkit-backdrop-filter:blur(32px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.4)" />',
-      '  <button id="siSubmit" type="button" style="width:100%;padding:16px;border:none;border-radius:16px;background:linear-gradient(135deg,#e50914,rgba(229,9,20,0.6));color:#fff;font-weight:900;font-size:17px;cursor:pointer;position:relative;z-index:1;box-shadow:0 0 44px rgba(229,9,20,0.6),inset 0 1px 0 rgba(255,255,255,0.4)">Sign In</button>',
-      '  <div id="siStatus" style="min-height:20px;margin-top:14px;text-align:center;font-size:14px;color:#c9c9c9;position:relative;z-index:1"></div>',
-      '  <button id="siImport" type="button" style="display:block;width:100%;margin-top:14px;padding:14px;border:none;border-radius:16px;background:rgba(255,255,255,0.03);color:#c9c9c9;font-size:14px;cursor:pointer;text-decoration:underline;border:1px solid rgba(255,255,255,0.1);backdrop-filter:blur(32px);-webkit-backdrop-filter:blur(32px);box-shadow:inset 0 1px 0 rgba(255,255,255,0.4);position:relative;z-index:1">Import credentials file (.txt)</button>',
+      '  <h2 style="margin:0 0 6px;font-size:26px;font-weight:900;text-align:center;color:#fff;position:relative;z-index:1">Sign in</h2>',
+      '  <p style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices</p>',
+      '  <input id="siUser" type="text" placeholder="GitHub username" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
+      '  <input id="siGist" type="text" placeholder="Gist ID" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
+      '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:16px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
+      '  <button id="siSubmit" type="button" style="width:100%;padding:12px;border:none;border-radius:6px;background:#e50914;color:#fff;font-weight:700;font-size:15px;cursor:pointer;position:relative;z-index:1">Sign In</button>',
+      '  <div id="siStatus" style="min-height:18px;margin-top:12px;text-align:center;font-size:13px;color:#a5a5a5;position:relative;z-index:1"></div>',
+      '  <button id="siImport" type="button" style="display:block;width:100%;margin-top:10px;padding:10px;border:none;border-radius:6px;background:transparent;color:#a5a5a5;font-size:13px;cursor:pointer;text-decoration:underline">Import credentials file (.txt)</button>',
       '  <input id="siFile" type="file" accept=".txt" style="display:none" />',
       '</div>'
     ].join('');
