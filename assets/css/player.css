@@ -23,7 +23,7 @@ body::before{
   pointer-events:none;
 }
 .video-container{
-  width:100%;max-width:1100px;padding:24px 16px;box-sizing:border-box;position:relative;z-index:1;
+  width:100%;max-width:1400px;padding:16px 12px;box-sizing:border-box;position:relative;z-index:1;
 }
 video#my-video{
   width:100%;height:auto;background:#000;border-radius:var(--radius);display:block;margin:0 auto;
