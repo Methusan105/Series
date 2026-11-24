@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supernatural &gt; S01 &gt; 21</title>
+  <link href="https://vjs.zencdn.net/8.16.1/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.16.1/video.min.js"></script>
+  <script src="/Series/Playback.js"></script>
+  <script src="https://cdn.sc.gl/videojs-hotkeys/latest/videojs.hotkeys.min.js"></script>
+  <link rel="stylesheet" href="/Series/assets/css/player.css" />
+</head>
+<body>
+  <div class="video-container">
+    <video
+      id="my-video"
+      class="video-js vjs-fluid"
+      controls
+      preload="metadata"
+      playsinline
+      poster="MY_VIDEO_POSTER.jpg"
+    >
+      <source src="https://github.com/Methusan105/Series/releases/download/SN1/Supernatural.S01E21.mp4" type="video/mp4" />
+      <track kind="subtitles" src="https://raw.githubusercontent.com/Methusan105/Series/main/Supernatural/S01/Subs/Supernatural.S01E21.vtt" srclang="en" label="English" default>
+      <p class="vjs-no-js">
+        To view this video please enable JavaScript, and consider upgrading to a
+        web browser that
+        <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+      </p>
+    </video>
+    <div class="player-footer">
+      <a href="/Series/Supernatural/Supernatural.html" class="next-episode" onclick="clearGistProgress()">Back to main menu &rarr;</a>
+      <button class="clear-btn" type="button" onclick="clearGistProgress()">Clear Progress</button>            <button class="preload-btn" type="button" onclick="downloadVideo()">Download Video</button>
+    </div>
+    <p class="hint">Space: Play/Pause &bull; &larr; &rarr;: Seek 5s &bull; F: Fullscreen &bull; M: Mute &bull; C: Subs &bull; &uarr; &darr;: Volume</p>
+  </div>
+  <script>var video = document.getElementById('my-video');
+var player = videojs("my-video");
+var spacePressed = false;
+var pageLoadTime = new Date().getTime();
+var saveInterval = 15000;
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener("keydown", function (event) {
+        if (event.key === " ") { event.preventDefault(); togglePause(); }
+        if (event.key === "f") { fullscr(); }
+        if (event.key === "ArrowLeft") { seekBackward(); }
+        if (event.key === "ArrowRight") { seekForward(); }
+        if (event.key === "m" || event.key === "M") { toggleMute(); }
+        if (event.key === "c" || event.key === "C") { toggleCaptions(); }
+        if (event.key === "ArrowUp") { volumeUp(); }
+        if (event.key === "ArrowDown") { volumeDown(); }
+    });
+    function togglePause() { if (player.paused()) player.play(); else player.pause(); }
+    function fullscr() { if (player.isFullscreen()) player.exitFullscreen(); else player.requestFullscreen(); }
+    function seekForward() { player.currentTime(player.currentTime() + 5); }
+    function seekBackward() { player.currentTime(player.currentTime() - 5); }
+    function toggleMute() { player.muted(!player.muted()); }
+    function toggleCaptions() { var tracks = player.textTracks(); for (var i = 0; i < tracks.length; i++) { if (tracks[i].kind === "captions" || tracks[i].kind === "subtitles") { tracks[i].mode = (tracks[i].mode === "showing") ? "hidden" : "showing"; } } }
+    function volumeUp() { player.volume(Math.min(1, player.volume() + 0.1)); }
+    function volumeDown() { player.volume(Math.max(0, player.volume() - 0.1)); }
+
+    var isVideoPaused = false;
+
+    // ---- dead source recovery state ------------------------------------
+    var loadGraceMs = 10000;   // no metadata within this = suspect dead
+    var recoveryAttempts = 0;
+    var recoveryMax = 3;       // hard cap: a dead link must not loop forever
+    var recovering = false;
+    var pendingSeek = null;
+    var lastKnownProgress = 0;
+    var progressReady = false;
+    var pendingRecovery = null;
+
+    SeriesAuth.require(function () {
+        setupVideoPlayback();
+    });
+
+    function setupVideoPlayback() {
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+            if (progressData && progressData.progress) {
+                lastKnownProgress = parseFloat(progressData.progress);
+                seekTo(lastKnownProgress);
+            }
+            markProgressReady();
+        });
+        // Never let a slow progress read block dead-source recovery forever.
+        setTimeout(markProgressReady, 3000);
+        setInterval(saveProgress, saveInterval);
+
+        // A dead/unreachable source makes the browser fire an error; cover the
+        // network (2), decode (3) and unsupported-source (4) cases.
+        video.addEventListener('error', function () {
+            if (video.error && (video.error.code === 2 || video.error.code === 3 || video.error.code === 4)) {
+                recoverFromDeadSource('media error ' + video.error.code);
+            }
+        });
+
+        video.addEventListener('loadedmetadata', function () {
+            if (pendingSeek != null) {
+                seekTo(pendingSeek);
+                pendingSeek = null;
+            }
+            recoveryAttempts = 0;
+            recovering = false;
+        });
+
+        // With <source> children the error fires on the <source> element,
+        // not always on the video, so listen there too for fast detection.
+        var sourceEls = video.querySelectorAll('source');
+        for (var si = 0; si < sourceEls.length; si++) {
+            sourceEls[si].addEventListener('error', function () {
+                setTimeout(function () {
+                    if (video.readyState < 1) {
+                        recoverFromDeadSource('source unavailable');
+                    }
+                }, 500);
+            });
+        }
+
+        // Early detection: a dead source never produces metadata. Don't wait
+        // for the browser's slow error - check ourselves after a short grace.
+        setTimeout(function () {
+            if (!video.error && video.readyState < 1) {
+                recoverFromDeadSource('no media data after load');
+            }
+        }, loadGraceMs);
+
+        video.addEventListener('timeupdate', function () {
+            if (video.paused && !isVideoPaused) { isVideoPaused = true; saveProgress(); }
+        });
+        video.addEventListener('play', function () { isVideoPaused = false; });
+    }
+
+    function markProgressReady() {
+        if (progressReady) return;
+        progressReady = true;
+        if (pendingRecovery) {
+            var reason = pendingRecovery;
+            pendingRecovery = null;
+            recoverFromDeadSource(reason);
+        }
+    }
+
+    function saveProgress() {
+        if (recovering) return;
+        persistPosition(video.currentTime);
+    }
+
+    function persistPosition(pos) {
+        var creds = SeriesAuth.get();
+        if (!creds) return;
+        var now = new Date().getTime();
+        SeriesAuth.writeProgress(creds, {
+            "progress": pos,
+            "url": window.location.href,
+            "timeOnPage": (now - pageLoadTime) / 1000
+        });
+    }
+
+    function seekTo(t) {
+        if (typeof t !== 'number' || !isFinite(t) || t < 0) return;
+        try { video.currentTime = t; } catch (e) { pendingSeek = t; }
+    }
+
+    function recoverFromDeadSource(reason) {
+        if (!progressReady) { pendingRecovery = reason; return; }
+        if (recovering) return;
+        recovering = true;
+        var savedPos = video.currentTime || lastKnownProgress || 0;
+        persistPosition(savedPos);   // save BEFORE refreshing
+        console.warn('Dead video source (' + reason + '); saved ' + Math.round(savedPos) + 's, refreshing.');
+        refreshAndRestore(savedPos);
+    }
+
+    function refreshAndRestore(savedPos) {
+        pendingSeek = null;
+        video.load();
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+            var target = savedPos > 0 ? savedPos : ((progressData && progressData.progress) ? parseFloat(progressData.progress) : 0);
+            if (target) {
+                pendingSeek = target;
+                seekTo(target);
+            }
+            var p = video.play();
+            if (p && p.catch) p.catch(function () {});
+        });
+
+        var waited = 0;
+        var poll = setInterval(function () {
+            if (video.readyState >= 1) {
+                clearInterval(poll);
+                recovering = false;
+                recoveryAttempts = 0;
+            } else if (video.error) {
+                clearInterval(poll);
+                retryOrGiveUp(savedPos);
+            } else if ((waited += 400) >= 10000) {
+                clearInterval(poll);
+                retryOrGiveUp(savedPos);
+            }
+        }, 400);
+    }
+
+    function retryOrGiveUp(savedPos) {
+        recoveryAttempts += 1;
+        if (recoveryAttempts < recoveryMax) {
+            setTimeout(function () { refreshAndRestore(savedPos); }, recoveryAttempts * 2000);
+        } else {
+            recovering = false;
+            console.error('Video source is dead after ' + recoveryMax + ' attempts; progress saved at ' + Math.round(savedPos) + 's.');
+        }
+    }
+});
+
+    function downloadVideo() {
+      var video = document.getElementById('my-video');
+      var sourceEl = video.querySelector('source');
+      if (!sourceEl) {
+        alert('No video source found');
+        return;
+      }
+      var videoUrl = sourceEl.src;
+      var fileName = videoUrl.split('/').pop() || 'video.mp4';
+
+      var a = document.createElement('a');
+      a.href = videoUrl;
+      a.download = fileName;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }</script>
+
+</body>
+</html>
