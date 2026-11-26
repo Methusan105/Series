@@ -120,11 +120,11 @@ jobs:
 
       - name: Run transcription
         run: |
-          output="${{ github.event.inputs.asset_name }}"
-          output="${output%.mp4}.vtt"
+          echo "Extracting audio..."
+          ffmpeg -y -i input.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 audio.wav
 
           python transcript_to_vtt.py \
-            input.mp4 \
+            audio.wav \
             -o "transcribed.vtt" \
             -m "${{ github.event.inputs.model }}"
 
