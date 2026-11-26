@@ -35,5 +35,5 @@ jobs:
                  -f "ref=testings" \
                  -f "inputs[release_tag]=$TAG" \
                  -f "inputs[asset_name]=$asset" \
-                 -f "inputs[model]=large-v3"
+                 -f "inputs[model]=medium.en"
            done
