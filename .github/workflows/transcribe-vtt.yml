@@ -128,10 +128,76 @@ jobs:
 
           python transcript_to_vtt.py \
             input.mp4 \
-            -o "$output" \
+            -o "transcribed.vtt" \
             -m "${{ github.event.inputs.model }}"
 
-          ls -lh "$output"
+          ls -lh transcribed.vtt
+
+      - name: Compare and fix existing VTT timing
+        run: |
+          asset="${{ github.event.inputs.asset_name }}"
+          vtt_file="${asset%.mp4}.vtt"
+          show=$(echo "$asset" | sed -E 's/^(.+)\.S[0-9]{2}E[0-9]{2}.*$/\1/')
+          season=$(echo "$asset" | sed -E 's/^.+\.(S[0-9]{2})E[0-9]{2}.*$/\1/')
+          target_dir="${show}/${season}/Subs"
+          existing="${target_dir}/${vtt_file}"
+
+          cat > compare_fix.py <<'PY'
+          import re, sys, statistics, os
+
+          def parse(path):
+              cues = []
+              with open(path, encoding='utf-8') as f:
+                  for line in f:
+                      m = re.match(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', line)
+                      if m:
+                          def tosec(t):
+                              h,mm,s = t.split(':')
+                              return int(h)*3600 + int(mm)*60 + float(s)
+                          cues.append((tosec(m.group(1)), tosec(m.group(2))))
+              return cues
+
+          def to_ts(sec):
+              h = int(sec//3600); m = int((sec%3600)//60); s = sec%60
+              ms = int((s%1)*1000)
+              return f"{h:02}:{m:02}:{int(s):02}.{ms:03}"
+
+          trans = parse('transcribed.vtt')
+          if not os.path.exists(sys.argv[1]):
+              # No existing VTT: just rename transcribed
+              import shutil; shutil.copy('transcribed.vtt', sys.argv[2]); sys.exit(0)
+
+          exist = parse(sys.argv[1])
+          # Compute median offset (transcribed start - existing start) over paired cues
+          n = min(len(trans), len(exist))
+          offs = [trans[i][0]-exist[i][0] for i in range(n)]
+          offset = statistics.median(offs) if offs else 0.0
+          print(f"Computed offset: {offset:+.3f}s over {n} cues")
+
+          # Shift existing VTT timestamps by offset
+          with open(sys.argv[1], encoding='utf-8') as f:
+              content = f.read()
+
+          def shift_ts(ts):
+              h,mm,s = ts.split(':')
+              sec = int(h)*3600 + int(mm)*60 + float(s) + offset
+              if sec < 0: sec = 0
+              return to_ts(sec)
+
+          def repl(m):
+              return f"{shift_ts(m.group(1))} --> {shift_ts(m.group(2))}"
+
+          new = re.sub(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', repl, content)
+          with open(sys.argv[2], 'w', encoding='utf-8') as f:
+              f.write(new)
+          PY
+
+          mkdir -p "$target_dir"
+          if [ -f "$existing" ]; then
+            python compare_fix.py "$existing" "$existing"
+          else
+            cp transcribed.vtt "$existing"
+          fi
 
       - name: Commit and push VTT to dynamically generated folder path
         run: |
@@ -153,11 +219,10 @@ jobs:
 
           # Create directory and move target VTT file
           mkdir -p "$target_dir"
-          mv "$vtt_file" "$target_dir/"
 
           # Stage and commit the VTT file FIRST
           git add "$target_dir/$vtt_file"
-          git commit -m "Add transcription for ${asset%.mp4} in $target_dir" || echo "No changes to commit"
+          git commit -m "Fix subtitle timing for ${asset%.mp4} in $target_dir" || echo "No changes to commit"
 
           # Clean up ANY remaining temporary/untracked/modified files (like mp4, pycache, etc.)
           git clean -fd
