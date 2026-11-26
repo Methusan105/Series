@@ -14,7 +14,7 @@ on:
       model:
         description: Whisper model
         required: true
-        default: large-v3
+        default: medium.en
         type: choice
         options:
           - tiny.en
@@ -82,7 +82,7 @@ jobs:
           parser = argparse.ArgumentParser()
           parser.add_argument("input")
           parser.add_argument("-o", "--output", required=True)
-          parser.add_argument("-m", "--model", default="large-v3")
+          parser.add_argument("-m", "--model", default="medium.en")
           args = parser.parse_args()
 
           print(f"Loading faster-whisper model '{args.model}'...")
