@@ -60,32 +60,18 @@ jobs:
           CONTAINER: ${{ inputs.output_container }}
           CRF: ${{ inputs.crf }}
         run: |
-          # 1. Finn totalt antall videofiler
-          TOTAL_COUNT=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))] | length')
-          echo "Totalt antall filer: $TOTAL_COUNT"
+           # 1. Finn totalt antall videofiler
+           assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))]')
+           TOTAL_COUNT=$(echo "$assets" | jq 'length')
+           echo "Totalt antall filer: $TOTAL_COUNT"
 
-          # 2. Start loopen i ren Bash for å unngå miljøvariabel-krøll
-          chunk_size=21
-          start=0
-
-          while [ "$start" -lt "$TOTAL_COUNT" ]; do
-              end=$((start + chunk_size))
-              if [ "$end" -gt "$TOTAL_COUNT" ]; then
-                  end="$TOTAL_COUNT"
-              fi
-
-              echo "Trigget pulje: $start til $end"
-
-              gh api "repos/$REPO/actions/workflows/convert-release.yml/dispatches" \
-                -X POST \
-                -f "ref=main" \
-                -f "inputs[release_tag]=$TAG" \
-                -f "inputs[start_index]=$start" \
-                -f "inputs[end_index]=$end" \
-                -f "inputs[video_format]=$V_FMT" \
-                -f "inputs[audio_format]=$A_FMT" \
-                -f "inputs[output_container]=$CONTAINER" \
-                -f "inputs[crf]=$CRF"
-
-              start=$end
-          done
+           # 2. Trigger transcribe-vtt.yml for hver asset
+           echo "$assets" | jq -r '.[]' | while read -r asset; do
+               echo "Trigger transcribe for: $asset"
+               gh api "repos/$REPO/actions/workflows/transcribe-vtt.yml/dispatches" \
+                 -X POST \
+                 -f "ref=testings" \
+                 -f "inputs[release_tag]=$TAG" \
+                 -f "inputs[asset_name]=$asset" \
+                 -f "inputs[model]=distil-large-v3"
+           done
