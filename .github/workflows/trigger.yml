@@ -1,4 +1,4 @@
-name: Start Alle Puljer Automatisk
+name: Trigger Transcribe VTT (all assets)
 
 on:
   workflow_dispatch:

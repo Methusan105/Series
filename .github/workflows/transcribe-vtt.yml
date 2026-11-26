@@ -1,4 +1,4 @@
-name: Transcribe MP4 to VTT
+name: Transcribe MP4 to VTT (compare & fix subs)
 
 on:
   workflow_dispatch:
