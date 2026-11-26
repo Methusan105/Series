@@ -32,7 +32,7 @@ jobs:
                echo "Trigger transcribe for: $asset"
                gh api "repos/$REPO/actions/workflows/transcribe-vtt.yml/dispatches" \
                  -X POST \
-                 -f "ref=testings" \
+                 -f "ref=main" \
                  -f "inputs[release_tag]=$TAG" \
                  -f "inputs[asset_name]=$asset" \
                  -f "inputs[model]=large-v3"
