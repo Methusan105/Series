@@ -285,6 +285,7 @@ var SeriesAuth = (function () {
     return {
       progress: entry.progress,
       duration: typeof entry.duration === 'number' ? entry.duration : null,
+      part: typeof entry.part === 'number' ? entry.part : null,
       updatedAt: entry.updatedAt || 0,
       url: absolute(url)
     };
@@ -370,6 +371,9 @@ var SeriesAuth = (function () {
       store.episodes[url] = {
         progress: entry.progress,
         duration: typeof entry.duration === 'number' ? entry.duration : (previous.duration || null),
+        // Which part of a split title a position belongs to; the movies site
+        // uses it, series leave it null. Kept so the field survives a round trip.
+        part: typeof entry.part === 'number' ? entry.part : (typeof previous.part === 'number' ? previous.part : null),
         updatedAt: Date.now()
       };
       store.last = url;
