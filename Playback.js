@@ -412,7 +412,8 @@ var SeriesAuth = (function () {
     if (document.getElementById('seriesAuthStyle')) return;
     var st = document.createElement('style');
     st.id = 'seriesAuthStyle';
-    st.textContent = '#siSubmit:hover{background:#f40612}#siSkip:hover{border-color:#fff;color:#fff;background:rgba(255,255,255,0.13)}#siSkip:focus-visible,#siSubmit:focus-visible{outline:2px solid #fff;outline-offset:2px}#siImport:hover{color:#fff}';
+    // !important because the buttons carry these colours inline.
+    st.textContent = '#siSubmit:hover{background:#f40612!important}#siSkip:hover{border-color:#fff!important;color:#fff!important;background:rgba(255,255,255,0.13)!important}#siImport:hover{color:#fff!important}#siSkip:focus-visible,#siSubmit:focus-visible,#siImport:focus-visible{outline:2px solid #fff;outline-offset:2px}';
     document.head.appendChild(st);
   }
 
