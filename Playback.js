@@ -583,10 +583,24 @@ function measurePlayerChrome() {
   return total;
 }
 
+function setPlayerChrome(px) {
+  document.documentElement.style.setProperty('--player-chrome', Math.ceil(px) + 'px');
+}
+
 function fitPlayerToViewport() {
+  if (measurePlayerChrome() === null) return;
+
+  // Measure with the cap lifted: a reserve left over from portrait would
+  // squeeze the very layout being measured, and each pass would shrink it
+  // further. With no reserve the container shows its natural width.
+  setPlayerChrome(0);
   var reserve = measurePlayerChrome();
-  if (reserve === null) return;
-  document.documentElement.style.setProperty('--player-chrome', Math.ceil(reserve + 12) + 'px');
+  setPlayerChrome(reserve + 12);
+
+  // The cap can narrow the footer enough to add a row, so refine once at the
+  // width it actually settles at. Two passes converge; a third would chase it.
+  var constrained = measurePlayerChrome();
+  if (constrained > reserve) setPlayerChrome(constrained + 12);
 }
 
 var fitQueued = false;

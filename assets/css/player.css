@@ -53,11 +53,12 @@ video#my-video{
    and footer buttons below the fold. The cap goes on the container so the
    player still measures itself against its parent and stays 16:9. */
 @media(min-width:769px){
+  /* 420px floor: a very short viewport must not squeeze the video to nothing. */
   .video-container{
-    max-width:min(var(--player-max-w),calc((100vh - var(--player-chrome)) * 16 / 9 + 24px));
+    max-width:max(420px,min(var(--player-max-w),calc((100vh - var(--player-chrome)) * 16 / 9 + 24px)));
   }
   @supports(height:100dvh){
-    .video-container{max-width:min(var(--player-max-w),calc((100dvh - var(--player-chrome)) * 16 / 9 + 24px))}
+    .video-container{max-width:max(420px,min(var(--player-max-w),calc((100dvh - var(--player-chrome)) * 16 / 9 + 24px)))}
   }
 }
 .vjs-big-play-button{
@@ -141,7 +142,13 @@ video#my-video{
 }
 body{padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
 .vjs-control:focus,.vjs-control:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-@media(orientation:landscape) and (max-height:500px){.video-container{padding:8px}.player-footer{margin-top:8px}}
+@media(orientation:landscape) and (max-height:500px){
+  .video-container{padding:8px}
+  .player-footer{margin-top:8px}
+  /* Keyboard hints are noise on a phone held sideways, and the row costs
+     exactly the height the player needs there. */
+  .hint{display:none}
+}
 @media(prefers-reduced-motion:reduce){.vjs-big-play-button,.next-episode{transition:none}}
 .device-tv{
   --player-chrome:240px;
