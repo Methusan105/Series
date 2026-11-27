@@ -166,3 +166,35 @@ body::before{
   .filter-bar{padding:0 12px;margin-top:14px;}
   .filter-bar input{font-size:16px;min-height:48px;}
 }
+
+/* Saved progress: count, the limit that governs it, and a way to wipe it. */
+.progress-panel{max-width:1200px;margin:18px auto 0;padding:0 28px;}
+.progress-panel h2{
+  font-size:1rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 8px;
+}
+.progress-panel p{
+  margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  color:var(--muted);font-size:0.92rem;
+}
+.progress-panel .dot{opacity:0.5;}
+#savedCount{color:var(--text);font-weight:700;}
+.progress-panel select{
+  font-family:inherit;font-size:0.92rem;padding:6px 10px;border-radius:8px;
+  background:var(--card);border:1px solid var(--glass-border);color:var(--text);
+  cursor:pointer;outline:none;
+}
+.progress-panel select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.progress-clear{
+  font-family:inherit;font-size:0.86rem;padding:6px 12px;border-radius:8px;cursor:pointer;
+  background:transparent;border:1px solid var(--glass-border);color:var(--muted);
+  transition:color 0.2s,border-color 0.2s;
+}
+.progress-clear:hover{color:#fff;border-color:#fff;}
+.progress-clear:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+@media (max-width:640px) and (pointer:coarse) and (hover:none){
+  .progress-panel{padding:0 12px;margin-top:14px;}
+  .progress-panel p{font-size:0.88rem;gap:6px;}
+  .progress-panel select,.progress-clear{min-height:44px;box-sizing:border-box;}
+  .progress-clear{padding:0 14px;}
+}
