@@ -856,6 +856,40 @@ var SeriesAuth = (function () {
 })();
 
 // ============================================================
+// Series resume - a series page carries an empty button marked
+// [data-series="/Series/<name>/"], and this fills it with the last
+// episode watched in that series, or leaves it hidden.
+// ============================================================
+function labelForEpisode(url) {
+  var parts = new URL(url, window.location.href).pathname.split('/');
+  var file = parts.pop() || '';
+  var season = parts.pop() || '';
+  var episode = file.replace(/\.html$/, '');
+  if (!/^S\d+$/.test(season) || !/^\d+$/.test(episode)) return decodeURIComponent(file);
+  return season + 'E' + (episode.length < 2 ? '0' + episode : episode);
+}
+
+function mountSeriesResume() {
+  var buttons = document.querySelectorAll('[data-series]');
+  if (!buttons.length) return;
+  SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
+    for (var i = 0; i < buttons.length; i++) {
+      var button = buttons[i];
+      // Stored keys are absolute URLs, so the folder prefix has to be too.
+      var prefix = new URL(button.getAttribute('data-series'), window.location.href).href;
+      var mine = (items || []).filter(function (item) {
+        return item.url.indexOf(prefix) === 0;
+      });
+      if (!mine.length) continue;
+      var last = mine[0];
+      button.href = last.url;
+      button.textContent = '\u25b6 Resume ' + labelForEpisode(last.url);
+      button.hidden = false;
+    }
+  });
+}
+
+// ============================================================
 // Viewport fit - the player.css 16:9 box is capped against the
 // space below it, and that space differs per device (a TV footer
 // is taller, a narrow laptop wraps it onto two rows). Measure the
@@ -1121,6 +1155,9 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   // Account control: sign-in for guests, sign-out when syncing is on.
   SeriesAuth.mountAccount();
+
+  // Series pages: point at the episode last watched in that series.
+  mountSeriesResume();
 
   // Size the player to this device's viewport, now that the footer is final.
   fitPlayerToViewport();

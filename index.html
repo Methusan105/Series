@@ -27,6 +27,10 @@
           <h2>Continue watching</h2>
           <div id="continueRow" class="continue-row"></div>
         </section>
+        <div class="filter-bar">
+          <input id="seriesFilter" type="search" placeholder="Filter series" aria-label="Filter series by name" autocomplete="off" />
+          <p id="filterEmpty" class="filter-empty" hidden>No series match that.</p>
+        </div>
         <main class="seasons">
           <a class="season-card" onclick="clearGistProgress()" href="/Series/Akame%20Ga%20Kill/Akame.html"><span>Akame ga Kill</span></a>
           <a class="season-card" onclick="clearGistProgress()" href="/Series/Arcane/Arcane.html"><span>Arcane</span></a>
@@ -133,8 +137,32 @@
       return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
     }
 
+    // Filter the grid as you type; the cards are plain text so this is a
+    // substring match on the label.
+    function setupFilter() {
+      var input = document.getElementById('seriesFilter');
+      var empty = document.getElementById('filterEmpty');
+      if (!input) return;
+      var cards = Array.prototype.slice.call(document.querySelectorAll('.season-card'));
+
+      input.addEventListener('input', function () {
+        var query = input.value.trim().toLowerCase();
+        var shown = 0;
+        cards.forEach(function (card) {
+          var match = !query || card.textContent.toLowerCase().indexOf(query) !== -1;
+          card.hidden = !match;
+          if (match) shown += 1;
+        });
+        empty.hidden = shown > 0;
+        var section = document.getElementById('continueWatching');
+        if (section && query) section.hidden = true;
+        else if (section && shown === cards.length) section.hidden = !document.querySelector('.continue-card');
+      });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
       var resumeBtn = document.getElementById('resumeBtn');
+      setupFilter();
       continueWatching();
       if (resumeBtn) {
         resumeBtn.addEventListener('click', function () {
