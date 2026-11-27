@@ -115,8 +115,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 350
     permissions:
-      contents: read
-      actions: write
+      contents: write
     concurrency:
       group: subsync-${{ inputs.release_tag }}-${{ matrix.asset }}
       cancel-in-progress: false
@@ -226,71 +225,35 @@ jobs:
           PY
           fi
 
-      - name: Upload synced subtitle
-        uses: actions/upload-artifact@v4
-        with:
-          name: subs-${{ strategy.job-index }}
-          path: out/
-          retention-days: 3
-          if-no-files-found: ignore
-
-  commit:
-    name: Commit subtitles
-    needs: [plan, sync]
-    if: always() && needs.sync.result != 'cancelled' && needs.sync.result != 'skipped'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
-
-      - name: Collect synced subtitles
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: subs-*
-          path: synced
-          merge-multiple: true
-
-      - name: Commit and push
+      - name: Commit to the repo
         env:
           BRANCH: ${{ inputs.branch }}
-          TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          if [ ! -d synced ]; then
-            echo "Nothing to commit: no subtitle needed changing."
+          if [ ! -d out ] || [ -z "$(find out -name '*.vtt' -print -quit)" ]; then
+            echo "Nothing to commit: this subtitle already fits its video."
             exit 0
           fi
-          mapfile -t files < <(find synced -type f -name '*.vtt' -printf '%P\n' 2>/dev/null | sort)
-          count=${#files[@]}
-          if [ "$count" -eq 0 ]; then
-            echo "Nothing to commit: every subtitle already fits its video."
-            exit 0
-          fi
-          cp -a synced/. .
+          target=$(find out -name '*.vtt' -printf '%P\n' | head -n 1)
+          echo "Committing $target to $BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          for file in "${files[@]}"; do git add -- "$file"; done
-          git commit -m "fix(subs): sync subtitle timing for $count episode(s) from $TAG"
-          for attempt in 1 2 3 4 5; do
-            git pull --rebase --autostash origin "$BRANCH" || true
+          for attempt in 1 2 3 4 5 6 7 8; do
+            git fetch -q origin "$BRANCH"
+            git reset -q --hard "origin/$BRANCH"
+            cp -a out/. .
+            git add -- "$target"
+            if ! git commit -q -m "fix(subs): sync subtitle timing for $(basename "$target" .vtt)"; then
+              echo "No change after rebasing onto $BRANCH."
+              exit 0
+            fi
             if git push origin "HEAD:$BRANCH"; then
-              echo "Pushed $count subtitle(s) to $BRANCH"
-              break
+              echo "Pushed $target"
+              echo "- \`$target\` committed" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
             fi
-            echo "push attempt $attempt rejected, retrying"
-            sleep $((attempt * 10))
-            if [ "$attempt" -eq 5 ]; then
-              echo "::error::could not push after 5 attempts"
-              exit 1
-            fi
+            echo "push attempt $attempt lost to another job, retrying"
+            sleep $((attempt * 5))
           done
-          {
-            echo ""
-            echo "### Updated $count subtitle file(s)"
-            printf -- '- `%s`\n' "${files[@]:0:40}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::could not push $target after 8 attempts"
+          exit 1
