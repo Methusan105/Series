@@ -82,27 +82,37 @@ jobs:
               | grep -Eiv '\-aac\.mp4$' \
               | sort || true
           )
-          # Two assets sharing a stem (Show.mkv beside Show.mp4, which the old
-          # MKV workflow produces) would both want Show-aac.mp4 and the second
-          # upload would clobber the first, losing that variant outright. Those
-          # stems carry their source extension into the output name instead.
-          declare -A stem_uses=()
+          # The deliverable for an episode is <stem>.mp4, so Supernatural.S04E01.mkv
+          # becomes Supernatural.S04E01.mp4 and an .mp4 source keeps its own name
+          # and is replaced in place. A source whose deliverable is already in the
+          # release is left alone; an .mp4 source is that deliverable itself, so
+          # its job re-probes and decides whether anything is left to do.
+          in_release() { printf '%s\n' "$assets" | grep -Fxq "$1"; }
+          declare -A claiming=()
+          pending=()
           for name in "${videos[@]}"; do
-            stem=${name%.*}
-            stem_uses[$stem]=$(( ${stem_uses[$stem]:-0} + 1 ))
+            target="${name%.*}.mp4"
+            if [ "$PROBE" != true ] && [ "$target" != "$name" ] && in_release "$target"; then
+              echo "skip $name: $target already in the release"
+              continue
+            fi
+            pending+=("$name")
+            claiming[$target]=$(( ${claiming[$target]:-0} + 1 ))
           done
           selected=()
-          for name in "${videos[@]}"; do
+          for name in "${pending[@]}"; do
             stem=${name%.*}
-            ext=${name##*.}
-            if [ "${stem_uses[$stem]}" -gt 1 ]; then
-              out="$stem.$ext-aac.mp4"
+            target="$stem.mp4"
+            # Two sources wanting one name (Show.mkv beside Show.avi) would race on
+            # the same upload, so those keep their source extension to stay distinct.
+            if [ "${claiming[$target]}" -gt 1 ]; then
+              out="$stem.${name##*.}-aac.mp4"
             else
-              out="$stem-aac.mp4"
+              out=$target
             fi
             # A probe still lists a video whose conversion already exists: the
             # point is to see the source's tracks before choosing any.
-            if [ "$PROBE" != true ] && printf '%s\n' "$assets" | grep -Fxq "$out"; then
+            if [ "$PROBE" != true ] && [ "$out" != "$name" ] && in_release "$out"; then
               echo "skip $name: $out already in the release"
               continue
             fi
@@ -200,6 +210,7 @@ jobs:
 
       - name: Probe audio tracks and remux to AAC MP4
         env:
+          ASSET: ${{ matrix.asset }}
           OUT: ${{ matrix.out }}
           KEEP: ${{ inputs.keep_audio || 'all' }}
           DROP: ${{ inputs.drop_audio || '' }}
@@ -210,8 +221,16 @@ jobs:
           opts=(--keep "$KEEP" --drop "$DROP")
           if [ "$PROBE" = true ]; then
             opts+=(--dry-run)
+          elif [ "$ASSET" = "$OUT" ]; then
+            # Replacing an asset in place: if it is already an AAC MP4 there is
+            # nothing to do, and re-uploading it on every run would be a waste.
+            opts+=(--skip-when-done)
           fi
           bash .github/scripts/aac-mp4.sh "$input" "$OUT" "${opts[@]}" | tee convert.log
+          if grep -q '^noop:' convert.log; then
+            echo "UNCHANGED=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
           if [ "$PROBE" = true ]; then
             echo "Probe only: nothing written, nothing uploaded."
             exit 0
@@ -224,7 +243,7 @@ jobs:
           fi
 
       - name: Upload to the release
-        if: github.event_name != 'workflow_dispatch' || inputs.probe_only != true
+        if: (github.event_name != 'workflow_dispatch' || inputs.probe_only != true) && env.UNCHANGED != '1' 
         env:
           GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -235,7 +254,9 @@ jobs:
           gh release upload "$TAG" "$OUT" --repo "$REPO" --clobber
 
       - name: Remove the source asset
-        if: github.event_name == 'workflow_dispatch' && inputs.remove_original == 'delete' && inputs.probe_only != true
+        # Never delete the asset we just replaced in place: source and output are
+        # the same name there, so the delete would remove the conversion itself.
+        if: github.event_name == 'workflow_dispatch' && inputs.remove_original == 'delete' && inputs.probe_only != true && env.UNCHANGED != '1' && matrix.asset != matrix.out
         env:
           GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -252,6 +273,10 @@ jobs:
           {
             echo "### \`$ASSET\` → \`$OUT\`"
             echo ""
+            if [ "$ASSET" = "$OUT" ]; then
+              echo "_Replaces the source asset once converted._"
+              echo ""
+            fi
             if [ -f convert.log ]; then
               echo '```'
               cat convert.log
