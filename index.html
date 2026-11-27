@@ -113,7 +113,7 @@
       var series = decodeURIComponent(parts.pop() || '');
       var episode = file.replace(/\.html$/, '');
       if (!series || !/^S\d+$/.test(season) || !/^\d+$/.test(episode)) return decodeURIComponent(file);
-      return series + ' \u00b7 ' + season + 'E' + ('0' + episode).slice(-2);
+      return series + ' \u00b7 ' + season + 'E' + (episode.length < 2 ? '0' + episode : episode);
     }
 
     function clock(seconds) {

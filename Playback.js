@@ -172,8 +172,17 @@ var SeriesAuth = (function () {
   // Files written by earlier versions held a single { progress, url };
   // normalize() upgrades those on read, and mergeProgress() keeps the flat
   // progress/url fields in sync so an older page still understands the file.
+  // One key per episode: ?device=tv, #t=30 and friends are display-only and
+  // must not fork a second entry for the same page.
   function absolute(url) {
-    try { return new URL(url, window.location.href).href; } catch (e) { return url; }
+    try {
+      var parsed = new URL(url, window.location.href);
+      parsed.search = '';
+      parsed.hash = '';
+      return parsed.href;
+    } catch (e) {
+      return url;
+    }
   }
 
   function currentUrl() {
@@ -355,38 +364,7 @@ var SeriesAuth = (function () {
     return !!(at && at.progress > 0);
   }
 
-  function writeProgress(creds, progressData) {
-    if (suppressWrites) return writeQueue;
-    var store = mergeProgress(readLocal(), progressData);
-    writeLocal(store);
-    if (!canSync(creds)) return writeQueue;
-    writeQueue = writeQueue.then(function () {
-      if (suppressWrites) return null;
-      var gistData = { files: {} };
-      gistData.files[GIST_FILENAME] = { content: JSON.stringify(store, null, 2) };
-      return fetch(gistUrl(creds), {
-        method: 'PATCH',
-        headers: {
-          'Authorization': 'token ' + creds.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(gistData)
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { console.log('Progress saved:', d); })
-        .catch(function (e) { console.error('Save error:', e); });
-    });
-    return writeQueue;
-  }
-
-  // On a player page this forgets that one episode; anywhere else (the home
-  // page's series cards) it clears the whole file, as it always did.
-  function clearProgress(creds) {
-    var store = isEpisodePage()
-      ? clearAt(readLocal(), currentUrl())
-      : { episodes: {}, last: null, progress: 0, url: null };
-    writeLocal(store);
-    if (!canSync(creds)) return Promise.resolve(null);
+  function patchProgress(creds, store) {
     var gistData = { files: {} };
     gistData.files[GIST_FILENAME] = { content: JSON.stringify(store, null, 2) };
     return fetch(gistUrl(creds), {
@@ -398,8 +376,55 @@ var SeriesAuth = (function () {
       body: JSON.stringify(gistData)
     })
       .then(function (r) { return r.json(); })
-      .then(function (d) { console.log('Progress cleared:', d); return d; })
-      .catch(function (e) { console.error('Clear error:', e); throw e; });
+      .then(function (d) { console.log('Progress saved:', d); return d; })
+      .catch(function (e) { console.error('Save error:', e); });
+  }
+
+  // Read-modify-write against the live file. A device that has been open for a
+  // while holds a stale copy, so building the new file from that copy alone
+  // would delete whatever another device saved in the meantime.
+  function commit(creds, build) {
+    var local = build(readLocal());
+    writeLocal(local);
+    if (!canSync(creds)) return writeQueue;
+    writeQueue = writeQueue.then(function () {
+      if (suppressWrites) return null;
+      return readProgressFile(creds).then(function (remote) {
+        var store = build(remote || readLocal());
+        writeLocal(store);
+        return patchProgress(creds, store);
+      });
+    });
+    return writeQueue;
+  }
+
+  function writeProgress(creds, progressData) {
+    if (suppressWrites) return writeQueue;
+    return commit(creds, function (base) {
+      return mergeProgress(base, progressData);
+    });
+  }
+
+  // On a player page this forgets that one episode; anywhere else (the home
+  // page's series cards) it clears the whole file, as it always did.
+  function clearProgress(creds) {
+    var forget = isEpisodePage()
+      ? function (base) { return clearAt(base, currentUrl()); }
+      : function () { return { episodes: {}, last: null, progress: 0, url: null }; };
+    var local = forget(readLocal());
+    writeLocal(local);
+    if (!canSync(creds)) return Promise.resolve(local);
+    writeQueue = writeQueue.then(function () {
+      return readProgressFile(creds).then(function (remote) {
+        var store = forget(remote || readLocal());
+        writeLocal(store);
+        return patchProgress(creds, store);
+      });
+    }).catch(function (e) {
+      console.error('Clear error:', e);
+      throw e;
+    });
+    return writeQueue;
   }
 
   // PATCH the gist, then re-read it to prove the progress is really gone.
