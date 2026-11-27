@@ -171,7 +171,7 @@
             window.location.href = progressData.url;
           } else {
             if (spinner) spinner.style.display = 'none';
-            if (status) status.textContent = 'No saved progress found — pick a series from the home page.';
+            if (status) status.innerHTML = 'No saved progress yet \u2014 <a href="/Series/index.html" style="color:#e50914;text-decoration:none;font-weight:600">pick a series</a> to start.';
           }
         });
       });
