@@ -12,6 +12,11 @@ on:
         description: "Release holding the videos (e.g. v1.2.0)"
         required: true
         type: string
+      probe_only:
+        description: "Only list the audio tracks in each video, convert and upload nothing"
+        required: true
+        default: false
+        type: boolean
       keep_audio:
         description: "Audio tracks to keep: all, or indexes/languages (e.g. 0,jpn), or title:<text>"
         required: true
@@ -67,6 +72,7 @@ jobs:
           FILTER: ${{ inputs.filter }}
           KEEP: ${{ inputs.keep_audio || 'all' }}
           DROP: ${{ inputs.drop_audio || '' }}
+          PROBE: ${{ inputs.probe_only || false }}
         run: |
           set -euo pipefail
           assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
@@ -94,7 +100,9 @@ jobs:
             else
               out="$stem-aac.mp4"
             fi
-            if printf '%s\n' "$assets" | grep -Fxq "$out"; then
+            # A probe still lists a video whose conversion already exists: the
+            # point is to see the source's tracks before choosing any.
+            if [ "$PROBE" != true ] && printf '%s\n' "$assets" | grep -Fxq "$out"; then
               echo "skip $name: $out already in the release"
               continue
             fi
@@ -119,7 +127,11 @@ jobs:
           {
             echo "### AAC MP4: \`$TAG\`"
             echo ""
-            echo "${#selected[@]} video(s) queued, keep \`$KEEP\`, drop \`${DROP:-none}\`"
+            if [ "$PROBE" = true ]; then
+              echo "${#selected[@]} video(s) to list, probe only — nothing is converted or uploaded"
+            else
+              echo "${#selected[@]} video(s) queued, keep \`$KEEP\`, drop \`${DROP:-none}\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   convert:
@@ -186,15 +198,24 @@ jobs:
             exit 1
           fi
 
-      - name: Probe audio codecs and remux to AAC MP4
+      - name: Probe audio tracks and remux to AAC MP4
         env:
           OUT: ${{ matrix.out }}
           KEEP: ${{ inputs.keep_audio || 'all' }}
           DROP: ${{ inputs.drop_audio || '' }}
+          PROBE: ${{ inputs.probe_only || false }}
         run: |
           set -euo pipefail
           input=$(find dl -type f -print -quit)
-          bash .github/scripts/aac-mp4.sh "$input" "$OUT" --keep "$KEEP" --drop "$DROP" | tee convert.log
+          opts=(--keep "$KEEP" --drop "$DROP")
+          if [ "$PROBE" = true ]; then
+            opts+=(--dry-run)
+          fi
+          bash .github/scripts/aac-mp4.sh "$input" "$OUT" "${opts[@]}" | tee convert.log
+          if [ "$PROBE" = true ]; then
+            echo "Probe only: nothing written, nothing uploaded."
+            exit 0
+          fi
           ls -lh "$OUT"
           size=$(stat -c%s "$OUT")
           if [ "$size" -ge $((2 * 1024 * 1024 * 1024)) ]; then
@@ -203,6 +224,7 @@ jobs:
           fi
 
       - name: Upload to the release
+        if: github.event_name != 'workflow_dispatch' || inputs.probe_only != true
         env:
           GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -213,7 +235,7 @@ jobs:
           gh release upload "$TAG" "$OUT" --repo "$REPO" --clobber
 
       - name: Remove the source asset
-        if: github.event_name == 'workflow_dispatch' && inputs.remove_original == 'delete'
+        if: github.event_name == 'workflow_dispatch' && inputs.remove_original == 'delete' && inputs.probe_only != true
         env:
           GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

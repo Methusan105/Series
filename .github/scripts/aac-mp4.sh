@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Remux a video into an MP4 that carries AAC audio, without re-encoding video.
 #
-#   ./aac-mp4.sh <input> <output> [--keep <spec>] [--drop <spec>]
+#   ./aac-mp4.sh <input> <output> [--keep <spec>] [--drop <spec>] [--dry-run]
+#
+# --dry-run prints the same per-track report and stops before ffmpeg runs, so
+# the tracks can be listed and chosen from before anything is converted.
 #
 # Audio policy, decided per track:
 #   aac            -> stream copy, bit-for-bit
@@ -37,10 +40,12 @@ shift 2
 
 keep=all
 drop=
+dry_run=0
 while [ "$#" -gt 0 ]; do
   case $1 in
     --keep) keep=${2:-} && shift 2 ;;
     --drop) drop=${2:-} && shift 2 ;;
+    --dry-run) dry_run=1 && shift ;;
     *) die "unknown option: $1" ;;
   esac
 done
@@ -205,6 +210,11 @@ for i in "${!idx[@]}"; do
 done
 
 [ "$kept" -gt 0 ] || die "keep=$keep_desc drop=${drop_desc:-none} leaves no audio track in $in"
+
+if [ "$dry_run" = 1 ]; then
+  printf 'dry run: %d of %d track(s) would be kept, nothing written\n' "$kept" "${#idx[@]}"
+  exit 0
+fi
 
 ffmpeg "${args[@]}" "${per_stream[@]}" \
   -map_metadata 0 -map_chapters 0 -movflags +faststart "$out"
