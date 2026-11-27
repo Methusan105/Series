@@ -7,8 +7,9 @@
 # --dry-run prints the same per-track report and stops before ffmpeg runs, so
 # the tracks can be listed and chosen from before anything is converted.
 # --skip-when-done exits early with a "noop:" line when the input is already an
-# MP4 whose audio is all AAC, which is what makes replacing an asset in place
-# idempotent instead of re-uploading it on every run.
+# MP4 whose audio is all AAC and no track selection was requested, which is what
+# makes replacing an asset in place idempotent instead of re-uploading it on
+# every run. A run that asks for particular tracks still remuxes.
 #
 # Audio policy, decided per track:
 #   aac            -> stream copy, bit-for-bit
@@ -88,17 +89,6 @@ for row in "${rows[@]}"; do
   flags+=("$f")
 done
 
-if [ "$skip_when_done" = 1 ] && [ "$dry_run" = 0 ] && [[ $container == *mp4* ]]; then
-  unconverted=0
-  for c in "${codecs[@]}"; do
-    [ "$c" = aac ] || unconverted=1
-  done
-  if [ "$unconverted" = 0 ]; then
-    printf 'noop: %s is already an AAC MP4, nothing to convert\n' "$in"
-    exit 0
-  fi
-fi
-
 matches() {
   local token=${1,,} index=$2 language=${3,,} title=${4,,} is_default=$5
   case $token in
@@ -156,6 +146,21 @@ for token in "${drop_tokens[@]}"; do
   done
   [ "${drop_hits[$token]:-}" = 1 ] || die "drop=$token matches no audio track; tracks are: $inventory (title:<text> matches a title)"
 done
+
+# Skipping an in-place asset is only "nothing to do" when no track selection was
+# asked for: an all-AAC MP4 still needs a remux if the run was told to drop or
+# keep particular tracks. Selectors are validated above, so a typo still fails.
+if [ "$skip_when_done" = 1 ] && [ "$dry_run" = 0 ] && [[ $container == *mp4* ]] &&
+  [ "$keep_desc" = all ] && [ -z "$drop_desc" ]; then
+  unconverted=0
+  for c in "${codecs[@]}"; do
+    [ "$c" = aac ] || unconverted=1
+  done
+  if [ "$unconverted" = 0 ]; then
+    printf 'noop: %s is already an AAC MP4, nothing to convert\n' "$in"
+    exit 0
+  fi
+fi
 
 in_keep() { local token; for token in "${keep_tokens[@]}"; do matches "$token" "$@" && return 0; done; return 1; }
 in_drop() { local token; for token in "${drop_tokens[@]}"; do matches "$token" "$@" && return 0; done; return 1; }
