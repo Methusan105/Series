@@ -200,7 +200,11 @@ var SeriesAuth = (function () {
       Object.keys(data.episodes).forEach(function (url) {
         var entry = data.episodes[url];
         if (!entry || typeof entry.progress !== 'number') return;
-        out.episodes[absolute(url)] = entry;
+        var key = absolute(url);
+        var existing = out.episodes[key];
+        // Two keys can collapse onto one once the query string is stripped;
+        // the newer position is the one worth keeping.
+        if (!existing || (entry.updatedAt || 0) > (existing.updatedAt || 0)) out.episodes[key] = entry;
       });
       out.last = data.last ? absolute(data.last) : null;
       return out;
@@ -330,22 +334,33 @@ var SeriesAuth = (function () {
 
   // Read video_progress.json from the gist, falling back to this browser's
   // copy. Resolves with the parsed JSON, or null when there is none.
-  function readProgressFile(creds) {
-    if (!canSync(creds)) return Promise.resolve(readLocal());
+  // The gist file itself: resolves null when the gist has no progress file,
+  // rejects when it could not be read at all. Callers that write must not
+  // confuse the two, or a failed read overwrites another device's entries.
+  function fetchRemoteStore(creds) {
     var headers = authHeaders(creds);
     headers['Accept'] = 'application/vnd.github+json';
     return fetch(gistUrl(creds) + '?t=' + Date.now(), { headers: headers })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        if (!r.ok) throw new Error('gist read failed (' + r.status + ')');
+        return r.json();
+      })
       .then(function (data) {
-        if (!data || !data.files || !data.files[GIST_FILENAME]) return readLocal();
-        var raw = data.files[GIST_FILENAME].content;
-        if (typeof raw !== 'string') return readLocal();
+        var raw = data && data.files && data.files[GIST_FILENAME] && data.files[GIST_FILENAME].content;
+        if (typeof raw !== 'string') return null;
         try {
           return JSON.parse(raw);
         } catch (e) {
-          return readLocal();
+          return null;
         }
-      })
+      });
+  }
+
+  // Readers fall back to this browser's copy when the gist is unreachable.
+  function readProgressFile(creds) {
+    if (!canSync(creds)) return Promise.resolve(readLocal());
+    return fetchRemoteStore(creds)
+      .then(function (store) { return store || readLocal(); })
       .catch(function () { return readLocal(); });
   }
 
@@ -374,10 +389,10 @@ var SeriesAuth = (function () {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(gistData)
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (d) { console.log('Progress saved:', d); return d; })
-      .catch(function (e) { console.error('Save error:', e); });
+    }).then(function (r) {
+      if (!r.ok) throw new Error('gist write failed (' + r.status + ')');
+      return r.json();
+    });
   }
 
   // Read-modify-write against the live file. A device that has been open for a
@@ -387,13 +402,23 @@ var SeriesAuth = (function () {
     var local = build(readLocal());
     writeLocal(local);
     if (!canSync(creds)) return writeQueue;
-    writeQueue = writeQueue.then(function () {
+    writeQueue = writeQueue.catch(function () { return null; }).then(function () {
       if (suppressWrites) return null;
-      return readProgressFile(creds).then(function (remote) {
+      return fetchRemoteStore(creds).then(function (remote) {
         var store = build(remote || readLocal());
         writeLocal(store);
         return patchProgress(creds, store);
+      }, function (e) {
+        // Unreadable remote: leave it alone rather than overwrite it with this
+        // browser's copy. The local one is already saved.
+        console.warn('Progress not synced:', e && e.message);
+        return null;
       });
+    });
+    // Autosave failures stay out of the way of the next write.
+    writeQueue = writeQueue.catch(function (e) {
+      console.error('Save error:', e && e.message);
+      return null;
     });
     return writeQueue;
   }
@@ -414,17 +439,21 @@ var SeriesAuth = (function () {
     var local = forget(readLocal());
     writeLocal(local);
     if (!canSync(creds)) return Promise.resolve(local);
-    writeQueue = writeQueue.then(function () {
-      return readProgressFile(creds).then(function (remote) {
+
+    // Rejections here reach the verification loop, which retries and finally
+    // reports failure; the queue itself is reset so later writes still run.
+    var done = writeQueue.catch(function () { return null; }).then(function () {
+      return fetchRemoteStore(creds).then(function (remote) {
         var store = forget(remote || readLocal());
         writeLocal(store);
         return patchProgress(creds, store);
       });
-    }).catch(function (e) {
-      console.error('Clear error:', e);
-      throw e;
     });
-    return writeQueue;
+    writeQueue = done.catch(function (e) {
+      console.error('Clear error:', e && e.message);
+      return null;
+    });
+    return done;
   }
 
   // PATCH the gist, then re-read it to prove the progress is really gone.
