@@ -105,7 +105,9 @@ body::before{
   font-size:1rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
   color:var(--muted);margin:0 0 12px;
 }
-.continue-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;}
+/* Fixed tile width: a row of two should look the same as a row of six,
+   rather than two cards stretching across the page. */
+.continue-row{display:grid;grid-template-columns:repeat(auto-fill,170px);gap:14px;justify-content:start;}
 .continue-card{
   display:flex;flex-direction:column;padding:0;border-radius:12px;overflow:hidden;
   background:var(--card);border:1px solid var(--glass-border);color:var(--text);
@@ -133,7 +135,7 @@ body::before{
 .continue-bar span{display:block;height:100%;background:var(--accent);}
 @media (max-width:640px) and (pointer:coarse) and (hover:none){
   .continue{margin-top:20px;padding:0 12px;}
-  .continue-row{grid-template-columns:repeat(3,1fr);gap:10px;}
+  .continue-row{grid-template-columns:repeat(auto-fill,108px);gap:10px;}
   .continue-body{padding:9px 10px 11px;gap:3px;}
   .continue-name{font-size:0.82rem;}
   .continue-where{font-size:0.72rem;}

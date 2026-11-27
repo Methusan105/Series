@@ -12,7 +12,7 @@
   <meta property="og:image" content="https://methusan105.github.io/Series/images/bg.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Series — pick up where you left off</title>
-  <link rel="stylesheet" href="/Series/assets/css/series.css" />
+  <link rel="stylesheet" href="/Series/assets/css/series.css?v=2" />
 </head>
 <body class="is-preload">
 
@@ -79,7 +79,7 @@
     </div>
   </div>
 
-  <script defer src="/Series/Playback.js"></script>
+  <script defer src="/Series/Playback.js?v=2"></script>
   <script src="assets/js/jquery.min.js"></script>
   <script src="assets/js/jquery.scrollex.min.js"></script>
   <script src="assets/js/jquery.scrolly.min.js"></script>
@@ -209,7 +209,10 @@
           art.appendChild(img);
           initials.hidden = true;
         });
-        img.src = '/Series/assets/posters/' + slug + '.' + extension;
+        // The manifest carries a version, so replacing a poster shows at once
+        // instead of after the CDN's ten-minute cache.
+        img.src = '/Series/assets/posters/' + slug + '.' + extension +
+          '?v=' + (posters.__version || 1);
       }
       return art;
     }
