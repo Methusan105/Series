@@ -351,7 +351,9 @@ var SeriesAuth = (function () {
         try {
           return JSON.parse(raw);
         } catch (e) {
-          return null;
+          // A truncated or hand-edited file must not read as "no file", or the
+          // next save would overwrite it with this browser's copy.
+          throw new Error('progress file is not valid JSON');
         }
       });
   }
