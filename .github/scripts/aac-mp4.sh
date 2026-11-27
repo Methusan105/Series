@@ -2,9 +2,14 @@
 # Remux a video into an MP4 that carries AAC audio, without re-encoding video.
 #
 #   ./aac-mp4.sh <input> <output> [--keep <spec>] [--drop <spec>] [--dry-run]
+#                [--skip-when-done]
 #
 # --dry-run prints the same per-track report and stops before ffmpeg runs, so
 # the tracks can be listed and chosen from before anything is converted.
+# --skip-when-done exits early with a "noop:" line when the input is already an
+# MP4 whose audio is all AAC and no track selection was requested, which is what
+# makes replacing an asset in place idempotent instead of re-uploading it on
+# every run. A run that asks for particular tracks still remuxes.
 #
 # Audio policy, decided per track:
 #   aac            -> stream copy, bit-for-bit
@@ -41,11 +46,13 @@ shift 2
 keep=all
 drop=
 dry_run=0
+skip_when_done=0
 while [ "$#" -gt 0 ]; do
   case $1 in
     --keep) keep=${2:-} && shift 2 ;;
     --drop) drop=${2:-} && shift 2 ;;
     --dry-run) dry_run=1 && shift ;;
+    --skip-when-done) skip_when_done=1 && shift ;;
     *) die "unknown option: $1" ;;
   esac
 done
@@ -53,7 +60,8 @@ done
 
 [ -f "$in" ] || die "no such file: $in"
 
-probe=$(ffprobe -v error -show_streams -of json -- "$in")
+probe=$(ffprobe -v error -show_streams -show_format -of json -- "$in")
+container=$(jq -r '.format.format_name // ""' <<<"$probe")
 
 video_codec=$(jq -r '[.streams[] | select(.codec_type == "video" and ((.disposition.attached_pic // 0) == 0))][0].codec_name // empty' <<<"$probe")
 [ -n "$video_codec" ] || die "$in has no video stream, so there is nothing to remux"
@@ -138,6 +146,21 @@ for token in "${drop_tokens[@]}"; do
   done
   [ "${drop_hits[$token]:-}" = 1 ] || die "drop=$token matches no audio track; tracks are: $inventory (title:<text> matches a title)"
 done
+
+# Skipping an in-place asset is only "nothing to do" when no track selection was
+# asked for: an all-AAC MP4 still needs a remux if the run was told to drop or
+# keep particular tracks. Selectors are validated above, so a typo still fails.
+if [ "$skip_when_done" = 1 ] && [ "$dry_run" = 0 ] && [[ $container == *mp4* ]] &&
+  [ "$keep_desc" = all ] && [ -z "$drop_desc" ]; then
+  unconverted=0
+  for c in "${codecs[@]}"; do
+    [ "$c" = aac ] || unconverted=1
+  done
+  if [ "$unconverted" = 0 ]; then
+    printf 'noop: %s is already an AAC MP4, nothing to convert\n' "$in"
+    exit 0
+  fi
+fi
 
 in_keep() { local token; for token in "${keep_tokens[@]}"; do matches "$token" "$@" && return 0; done; return 1; }
 in_drop() { local token; for token in "${drop_tokens[@]}"; do matches "$token" "$@" && return 0; done; return 1; }
