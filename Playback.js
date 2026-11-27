@@ -166,7 +166,119 @@ var SeriesAuth = (function () {
 
   // Resolve the newest progress: the gist when signed in, otherwise the copy
   // this browser keeps. Never fails - cb always gets an object or null.
-  function fetchProgress(creds, cb) {
+  // ---- the progress file ---------------------------------------------
+  // One position per episode, keyed by absolute URL:
+  //   { episodes: { "<href>": { progress, duration, updatedAt } }, last }
+  // Files written by earlier versions held a single { progress, url };
+  // normalize() upgrades those on read, and mergeProgress() keeps the flat
+  // progress/url fields in sync so an older page still understands the file.
+  // One key per episode: ?device=tv, #t=30 and friends are display-only and
+  // must not fork a second entry for the same page.
+  function absolute(url) {
+    try {
+      var parsed = new URL(url, window.location.href);
+      parsed.search = '';
+      parsed.hash = '';
+      return parsed.href;
+    } catch (e) {
+      return url;
+    }
+  }
+
+  function currentUrl() {
+    return absolute(window.location.href);
+  }
+
+  function isEpisodePage() {
+    return !!document.getElementById('my-video');
+  }
+
+  function normalize(data) {
+    var out = { episodes: {} };
+    if (!data || typeof data !== 'object') return out;
+    if (data.episodes && typeof data.episodes === 'object') {
+      Object.keys(data.episodes).forEach(function (url) {
+        var entry = data.episodes[url];
+        if (!entry || typeof entry.progress !== 'number') return;
+        var key = absolute(url);
+        var existing = out.episodes[key];
+        // Two keys can collapse onto one once the query string is stripped;
+        // the newer position is the one worth keeping.
+        if (!existing || (entry.updatedAt || 0) > (existing.updatedAt || 0)) out.episodes[key] = entry;
+      });
+      out.last = data.last ? absolute(data.last) : null;
+      return out;
+    }
+    if (typeof data.progress === 'number' && data.url) {
+      out.episodes[absolute(data.url)] = { progress: data.progress, updatedAt: Date.now() };
+      out.last = absolute(data.url);
+    }
+    return out;
+  }
+
+  function progressAt(data, url) {
+    var entry = normalize(data).episodes[absolute(url)];
+    if (!entry || typeof entry.progress !== 'number') return null;
+    return {
+      progress: entry.progress,
+      duration: typeof entry.duration === 'number' ? entry.duration : null,
+      updatedAt: entry.updatedAt || 0,
+      url: absolute(url)
+    };
+  }
+
+  function recentUrl(store) {
+    var urls = Object.keys(store.episodes);
+    if (!urls.length) return null;
+    urls.sort(function (a, b) {
+      return (store.episodes[b].updatedAt || 0) - (store.episodes[a].updatedAt || 0);
+    });
+    return urls[0];
+  }
+
+  // Nothing here needs an unbounded history: a few hundred recent episodes is
+  // far more than anyone resumes, and it keeps the file small.
+  var MAX_EPISODES = 500;
+
+  function trim(store) {
+    var urls = Object.keys(store.episodes);
+    if (urls.length <= MAX_EPISODES) return store;
+    urls.sort(function (a, b) {
+      return (store.episodes[b].updatedAt || 0) - (store.episodes[a].updatedAt || 0);
+    });
+    urls.slice(MAX_EPISODES).forEach(function (url) { delete store.episodes[url]; });
+    return store;
+  }
+
+  function mergeProgress(data, entry) {
+    var store = normalize(data);
+    var url = absolute(entry && entry.url ? entry.url : currentUrl());
+    if (entry && typeof entry.progress === 'number') {
+      var previous = store.episodes[url] || {};
+      store.episodes[url] = {
+        progress: entry.progress,
+        duration: typeof entry.duration === 'number' ? entry.duration : (previous.duration || null),
+        updatedAt: Date.now()
+      };
+      store.last = url;
+    }
+    trim(store);
+    if (store.last && store.episodes[store.last]) store.progress = store.episodes[store.last].progress;
+    store.url = store.last || null;
+    return store;
+  }
+
+  function clearAt(data, url) {
+    var store = normalize(data);
+    delete store.episodes[absolute(url)];
+    if (store.last === absolute(url)) store.last = recentUrl(store);
+    store.progress = store.last ? store.episodes[store.last].progress : 0;
+    store.url = store.last || null;
+    return store;
+  }
+
+  // Read the whole file: gist when signed in, this browser otherwise.
+  function readProgress(creds, cb) {
     var local = readLocal();
     if (!canSync(creds)) {
       cb(local);
@@ -191,6 +303,37 @@ var SeriesAuth = (function () {
       .catch(function () { cb(local); });
   }
 
+  // What a page needs: its own position on an episode page, otherwise the
+  // place to resume from.
+  function fetchProgress(creds, cb) {
+    readProgress(creds, function (data) {
+      var store = normalize(data);
+      if (isEpisodePage()) {
+        cb(progressAt(store, currentUrl()) || { progress: 0, url: currentUrl() });
+        return;
+      }
+      if (!store.last) { cb(null); return; }
+      cb(progressAt(store, store.last) || null);
+    });
+  }
+
+  // Every episode with a position, newest first, for the home page.
+  function fetchLibrary(creds, cb) {
+    readProgress(creds, function (data) {
+      var store = normalize(data);
+      var items = Object.keys(store.episodes).map(function (url) {
+        return {
+          url: url,
+          progress: store.episodes[url].progress || 0,
+          duration: store.episodes[url].duration || null,
+          updatedAt: store.episodes[url].updatedAt || 0
+        };
+      }).filter(function (item) { return item.progress > 0; });
+      items.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+      cb(items);
+    });
+  }
+
   var suppressWrites = false;
   var writeQueue = Promise.resolve();
 
@@ -206,59 +349,68 @@ var SeriesAuth = (function () {
 
   // Read video_progress.json from the gist, falling back to this browser's
   // copy. Resolves with the parsed JSON, or null when there is none.
-  function readProgressFile(creds) {
-    if (!canSync(creds)) return Promise.resolve(readLocal());
+  // The gist file itself: resolves null when the gist has no progress file,
+  // rejects when it could not be read at all. Callers that write must not
+  // confuse the two, or a failed read overwrites another device's entries.
+  function fetchRemoteStore(creds) {
     var headers = authHeaders(creds);
     headers['Accept'] = 'application/vnd.github+json';
     return fetch(gistUrl(creds) + '?t=' + Date.now(), { headers: headers })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (data) {
-        if (!data || !data.files || !data.files[GIST_FILENAME]) return readLocal();
-        var raw = data.files[GIST_FILENAME].content;
-        if (typeof raw !== 'string') return readLocal();
-        try {
-          return JSON.parse(raw);
-        } catch (e) {
-          return readLocal();
-        }
+      .then(function (r) {
+        if (!r.ok) throw new Error('gist read failed (' + r.status + ')');
+        return r.json();
       })
+      .then(function (data) {
+        var file = data && data.files && data.files[GIST_FILENAME];
+        if (!file) return null;
+        // The gists API returns only the first 1MB of a file, flagged as
+        // truncated; the raw URL carries the whole thing.
+        if (file.truncated && file.raw_url) {
+          return fetch(file.raw_url, { cache: 'no-store' }).then(function (r) {
+            if (!r.ok) throw new Error('gist file read failed (' + r.status + ')');
+            return r.text();
+          });
+        }
+        return typeof file.content === 'string' ? file.content : '';
+      })
+      .then(function (text) {
+        if (text === null) return null;
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          // A hand-edited file must not read as "no file", or the next save
+          // would overwrite it with this browser's copy.
+          throw new Error('progress file is not valid JSON');
+        }
+      });
+  }
+
+  // Readers fall back to this browser's copy when the gist is unreachable.
+  function readProgressFile(creds) {
+    if (!canSync(creds)) return Promise.resolve(readLocal());
+    return fetchRemoteStore(creds)
+      .then(function (store) { return store || readLocal(); })
       .catch(function () { return readLocal(); });
   }
 
   // A file "has progress" when it contains a usable, non-zero position.
   function hasProgress(data) {
-    if (!data || typeof data.progress !== 'number') return false;
-    return data.progress > 0;
+    var store = normalize(data);
+    if (!store.last) return false;
+    var at = store.episodes[store.last];
+    return !!(at && at.progress > 0);
   }
 
-  function writeProgress(creds, progressData) {
-    if (suppressWrites) return writeQueue;
-    writeLocal(progressData);
-    if (!canSync(creds)) return writeQueue;
-    writeQueue = writeQueue.then(function () {
-      if (suppressWrites) return null;
-      var gistData = { files: {} };
-      gistData.files[GIST_FILENAME] = { content: JSON.stringify(progressData, null, 2) };
-      return fetch(gistUrl(creds), {
-        method: 'PATCH',
-        headers: {
-          'Authorization': 'token ' + creds.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(gistData)
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (d) { console.log('Progress saved:', d); })
-        .catch(function (e) { console.error('Save error:', e); });
-    });
-    return writeQueue;
+  // After a clear: is the page we cleared still holding a position?
+  function stillWatched(data) {
+    if (!isEpisodePage()) return hasProgress(data);
+    var at = progressAt(data, currentUrl());
+    return !!(at && at.progress > 0);
   }
 
-  function clearProgress(creds) {
-    writeLocal(null);
-    if (!canSync(creds)) return Promise.resolve(null);
+  function patchProgress(creds, store) {
     var gistData = { files: {} };
-    gistData.files[GIST_FILENAME] = { content: JSON.stringify(12, null, 2) };
+    gistData.files[GIST_FILENAME] = { content: JSON.stringify(store, null, 2) };
     return fetch(gistUrl(creds), {
       method: 'PATCH',
       headers: {
@@ -266,10 +418,71 @@ var SeriesAuth = (function () {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(gistData)
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (d) { console.log('Progress cleared:', d); return d; })
-      .catch(function (e) { console.error('Clear error:', e); throw e; });
+    }).then(function (r) {
+      if (!r.ok) throw new Error('gist write failed (' + r.status + ')');
+      return r.json();
+    });
+  }
+
+  // Read-modify-write against the live file. A device that has been open for a
+  // while holds a stale copy, so building the new file from that copy alone
+  // would delete whatever another device saved in the meantime.
+  function commit(creds, build) {
+    var local = build(readLocal());
+    writeLocal(local);
+    if (!canSync(creds)) return writeQueue;
+    writeQueue = writeQueue.catch(function () { return null; }).then(function () {
+      if (suppressWrites) return null;
+      return fetchRemoteStore(creds).then(function (remote) {
+        var store = build(remote || readLocal());
+        writeLocal(store);
+        return patchProgress(creds, store);
+      }, function (e) {
+        // Unreadable remote: leave it alone rather than overwrite it with this
+        // browser's copy. The local one is already saved.
+        console.warn('Progress not synced:', e && e.message);
+        return null;
+      });
+    });
+    // Autosave failures stay out of the way of the next write.
+    writeQueue = writeQueue.catch(function (e) {
+      console.error('Save error:', e && e.message);
+      return null;
+    });
+    return writeQueue;
+  }
+
+  function writeProgress(creds, progressData) {
+    if (suppressWrites) return writeQueue;
+    return commit(creds, function (base) {
+      return mergeProgress(base, progressData);
+    });
+  }
+
+  // On a player page this forgets that one episode; anywhere else (the home
+  // page's series cards) it clears the whole file, as it always did.
+  function clearProgress(creds) {
+    var forget = isEpisodePage()
+      ? function (base) { return clearAt(base, currentUrl()); }
+      : function () { return { episodes: {}, last: null, progress: 0, url: null }; };
+    var local = forget(readLocal());
+    writeLocal(local);
+    if (!canSync(creds)) return Promise.resolve(local);
+
+    // Rejections here reach the verification loop, which retries and finally
+    // reports failure; the queue itself is reset so later writes still run.
+    var done = writeQueue.catch(function () { return null; }).then(function () {
+      return fetchRemoteStore(creds).then(function (remote) {
+        var store = forget(remote || readLocal());
+        writeLocal(store);
+        return patchProgress(creds, store);
+      });
+    });
+    writeQueue = done.catch(function (e) {
+      console.error('Clear error:', e && e.message);
+      return null;
+    });
+    return done;
   }
 
   // PATCH the gist, then re-read it to prove the progress is really gone.
@@ -277,7 +490,7 @@ var SeriesAuth = (function () {
     if (!canSync(creds)) {
       // Nothing remote to verify: dropping this browser's copy is enough.
       writeQueue.then(function () {
-        writeLocal(null);
+        clearProgress(null);
         cb(true);
       });
       return;
@@ -295,7 +508,7 @@ var SeriesAuth = (function () {
         .then(function () { return clearProgress(creds); })
         .then(function () { return readProgressFile(creds); })
         .then(function (data) {
-          if (!hasProgress(data)) {
+          if (!stillWatched(data)) {
             cb(true);
             return;
           }
@@ -570,6 +783,7 @@ var SeriesAuth = (function () {
     clear: clear,
     verify: verify,
     fetchProgress: fetchProgress,
+    fetchLibrary: fetchLibrary,
     writeProgress: writeProgress,
     clearProgress: clearProgress,
     clearProgressWithVerification: clearProgressWithVerification,

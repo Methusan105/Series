@@ -97,3 +97,27 @@ body::before{
   .season-card:active{transform:scale(.98);border-color:var(--accent);}
 }
 @media (min-width:1920px){.seasons{max-width:1400px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}}
+
+/* Continue watching - the episodes with a saved position, newest first. */
+.continue{max-width:1200px;margin:28px auto 0;padding:0 28px;}
+.continue h2{
+  font-size:1rem;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 12px;
+}
+.continue-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+.continue-card{
+  display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:12px;
+  background:var(--card);border:1px solid var(--glass-border);color:var(--text);
+  text-decoration:none;transition:border-color 0.2s,transform 0.2s,background 0.2s;
+}
+.continue-card:hover{border-color:var(--accent);background:var(--card-hover);transform:translateY(-2px);}
+.continue-name{font-weight:700;font-size:0.98rem;}
+.continue-where{color:var(--muted);font-size:0.82rem;}
+.continue-bar{display:block;height:4px;border-radius:999px;background:rgba(255,255,255,0.14);overflow:hidden;margin-top:4px;}
+.continue-bar span{display:block;height:100%;background:var(--accent);}
+@media (max-width:640px) and (pointer:coarse) and (hover:none){
+  .continue{margin-top:20px;padding:0 12px;}
+  .continue-row{grid-template-columns:1fr 1fr;gap:10px;}
+  .continue-card{padding:12px;gap:4px;}
+  .continue-name{font-size:0.9rem;}
+}

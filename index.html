@@ -15,6 +15,10 @@
           <p>Pick a show to resume playback</p>
           <button id="resumeBtn" type="button" class="resume-btn">▶ Resume Playback</button>
         </header>
+        <section id="continueWatching" class="continue" hidden>
+          <h2>Continue watching</h2>
+          <div id="continueRow" class="continue-row"></div>
+        </section>
         <main class="seasons">
           <a class="season-card" onclick="clearGistProgress()" href="/Series/Akame%20Ga%20Kill/Akame.html"><span>Akame ga Kill</span></a>
           <a class="season-card" onclick="clearGistProgress()" href="/Series/Arcane/Arcane.html"><span>Arcane</span></a>
@@ -60,8 +64,70 @@
   <script src="assets/js/util.js"></script>
   <script src="assets/js/main.js"></script>
   <script>
+    // The home page lists every episode with a saved position, newest first.
+    function continueWatching() {
+      var section = document.getElementById('continueWatching');
+      var row = document.getElementById('continueRow');
+      if (!section || !row) return;
+
+      SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
+        if (!items || !items.length) return;
+
+        row.textContent = '';
+        items.slice(0, 6).forEach(function (item) {
+          var card = document.createElement('a');
+          card.className = 'continue-card';
+          card.href = item.url;
+
+          var name = document.createElement('span');
+          name.className = 'continue-name';
+          name.textContent = labelFor(item.url);
+          card.appendChild(name);
+
+          var where = document.createElement('span');
+          where.className = 'continue-where';
+          where.textContent = clock(item.progress) + ' watched';
+          card.appendChild(where);
+
+          if (item.duration) {
+            var bar = document.createElement('span');
+            bar.className = 'continue-bar';
+            var fill = document.createElement('span');
+            fill.style.width = Math.min(100, (item.progress / item.duration) * 100) + '%';
+            bar.appendChild(fill);
+            card.appendChild(bar);
+          }
+
+          row.appendChild(card);
+        });
+
+        section.hidden = false;
+      });
+    }
+
+    // /Series/Prison%20Break/S01/3.html -> "Prison Break · S01E03"
+    function labelFor(url) {
+      var parts = new URL(url, window.location.href).pathname.split('/');
+      var file = parts.pop() || '';
+      var season = parts.pop() || '';
+      var series = decodeURIComponent(parts.pop() || '');
+      var episode = file.replace(/\.html$/, '');
+      if (!series || !/^S\d+$/.test(season) || !/^\d+$/.test(episode)) return decodeURIComponent(file);
+      return series + ' \u00b7 ' + season + 'E' + (episode.length < 2 ? '0' + episode : episode);
+    }
+
+    function clock(seconds) {
+      var total = Math.max(0, Math.round(seconds || 0));
+      var h = Math.floor(total / 3600);
+      var m = Math.floor((total % 3600) / 60);
+      var s = total % 60;
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
       var resumeBtn = document.getElementById('resumeBtn');
+      continueWatching();
       if (resumeBtn) {
         resumeBtn.addEventListener('click', function () {
           SeriesAuth.require(resume);

@@ -126,6 +126,7 @@
       SeriesAuth.writeProgress(creds, {
         "progress": pos,
         "url": window.location.href,
+        "duration": typeof player.duration === 'function' ? player.duration() : null,
         "timeOnPage": (now - pageLoadTime) / 1000
       });
     }
