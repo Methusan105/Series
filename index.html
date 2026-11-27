@@ -34,11 +34,11 @@
         <section id="progressPanel" class="progress-panel" aria-labelledby="progressTitle">
           <h2 id="progressTitle">Saved progress</h2>
           <p>
-            <span id="savedCount">0</span> episodes saved
+            <span id="savedCount">0</span> episodes across <span id="showCount">0</span> shows
             <span class="dot">&middot;</span>
             keep the last
-            <select id="progressLimit" aria-label="How many episodes to remember"></select>
-            episodes
+            <select id="progressLimit" aria-label="How many episodes to remember per show"></select>
+            episodes of each
             <span class="dot">&middot;</span>
             <button id="clearAll" type="button" class="progress-clear">Clear all</button>
           </p>
@@ -101,8 +101,18 @@
           return;
         }
 
+        // One card per show: the row is "which show do I go back to", not a
+        // list of the last six episodes, which is often six of the same.
+        var seen = {};
+        var perShow = items.filter(function (item) {
+          var key = SeriesAuth.seriesKey(item.url) || item.url;
+          if (seen[key]) return false;
+          seen[key] = true;
+          return true;
+        });
+
         row.textContent = '';
-        items.slice(0, 6).forEach(function (item) {
+        perShow.slice(0, 6).forEach(function (item) {
           var card = document.createElement('a');
           card.className = 'continue-card';
           card.href = item.url;
@@ -186,14 +196,19 @@
       (SeriesAuth.limitChoices || []).forEach(function (value) {
         var option = document.createElement('option');
         option.value = String(value);
-        option.textContent = value + ' episodes';
+        option.textContent = value + ' episodes per show';
         select.appendChild(option);
       });
 
       function render() {
         select.value = String(SeriesAuth.progressLimit());
         SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
+          var shows = {};
+          (items || []).forEach(function (item) {
+            shows[SeriesAuth.seriesKey(item.url) || item.url] = true;
+          });
           count.textContent = String((items || []).length);
+          document.getElementById('showCount').textContent = String(Object.keys(shows).length);
         });
       }
 

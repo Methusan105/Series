@@ -252,14 +252,35 @@ var SeriesAuth = (function () {
     }
   }
 
+  // Which show an episode belongs to: /Series/<name>/... keeps its own history,
+  // so a binge on one show cannot push the others out.
+  function seriesKey(url) {
+    try {
+      var parts = new URL(url, window.location.href).pathname.split('/');
+      var at = parts.indexOf('Series');
+      if (at === -1 || !parts[at + 1]) return '';
+      return '/' + parts.slice(0, at + 2).join('/') + '/';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // The limit counts per show, not in total.
   function trim(store) {
     var limit = progressLimit();
-    var urls = Object.keys(store.episodes);
-    if (urls.length <= limit) return store;
-    urls.sort(function (a, b) {
-      return (store.episodes[b].updatedAt || 0) - (store.episodes[a].updatedAt || 0);
+    var byShow = {};
+    Object.keys(store.episodes).forEach(function (url) {
+      var key = seriesKey(url) || url;
+      (byShow[key] = byShow[key] || []).push(url);
     });
-    urls.slice(limit).forEach(function (url) { delete store.episodes[url]; });
+    Object.keys(byShow).forEach(function (key) {
+      var urls = byShow[key];
+      if (urls.length <= limit) return;
+      urls.sort(function (a, b) {
+        return (store.episodes[b].updatedAt || 0) - (store.episodes[a].updatedAt || 0);
+      });
+      urls.slice(limit).forEach(function (url) { delete store.episodes[url]; });
+    });
     if (store.last && !store.episodes[store.last]) store.last = recentUrl(store);
     return store;
   }
@@ -870,6 +891,7 @@ var SeriesAuth = (function () {
     readProgressFile: readProgressFile,
     hasProgress: hasProgress,
     readLocal: readLocal,
+    seriesKey: seriesKey,
     progressLimit: progressLimit,
     limitChoices: LIMIT_CHOICES,
     setProgressLimit: setProgressLimit,
