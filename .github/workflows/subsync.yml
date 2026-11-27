@@ -1,0 +1,77 @@
+name: Subsync subs to video
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag where MP4 is stored"
+        required: true
+      asset_name:
+        description: "MP4 asset name (e.g., Supernatural.S02E01.mp4)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  subsync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install subsync
+        run: |
+          git clone https://github.com/kushtej/subsync.git /tmp/subsync
+          cd /tmp/subsync
+          chmod +x setup.sh
+          ./setup.sh
+
+      - name: Download MP4
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ github.event.inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "${{ github.event.inputs.asset_name }}" \
+            --output input.mp4
+          ls -lh input.mp4
+
+      - name: Run subsync
+        run: |
+          asset="${{ github.event.inputs.asset_name }}"
+          vtt_file="${asset%.mp4}.vtt"
+          show=$(echo "$asset" | sed -E 's/^(.+)\.S[0-9]{2}E[0-9]{2}.*$/\1/')
+          season=$(echo "$asset" | sed -E 's/^.+\.(S[0-9]{2})E[0-9]{2}.*$/\1/')
+          target_dir="${show}/${season}/Subs"
+          existing="${target_dir}/${vtt_file}"
+          mkdir -p "$target_dir"
+          if [ -f "$existing" ]; then
+            subsync input.mp4 -i "$existing" -o "synced.vtt"
+            mv synced.vtt "$existing"
+          else
+            echo "No existing VTT found"; exit 1
+          fi
+
+      - name: Commit and push
+        run: |
+          asset="${{ github.event.inputs.asset_name }}"
+          vtt_file="${asset%.mp4}.vtt"
+          show=$(echo "$asset" | sed -E 's/^(.+)\.S[0-9]{2}E[0-9]{2}.*$/\1/')
+          season=$(echo "$asset" | sed -E 's/^.+\.(S[0-9]{2})E[0-9]{2}.*$/\1/')
+          target_dir="${show}/${season}/Subs"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$target_dir/$vtt_file"
+          git commit -m "Subsync ${asset%.mp4}" || echo "No changes"
+          git push origin main
