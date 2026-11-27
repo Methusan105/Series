@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://methusan105.github.io/Series/sitemap.xml
