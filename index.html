@@ -98,13 +98,25 @@
 
     var posters = {};
 
+    var posterWaiters = [];
+
     function loadPosters(cb) {
+      // Callers can arrive before the manifest does, so every one of them waits
+      // for the same fetch rather than being answered with an empty list.
       if (loadPosters.done) return cb();
-      loadPosters.done = true;
+      posterWaiters.push(cb);
+      if (posterWaiters.length > 1) return;
+      var finish = function (map) {
+        posters = map && typeof map === 'object' ? map : {};
+        loadPosters.done = true;
+        var waiting = posterWaiters;
+        posterWaiters = [];
+        waiting.forEach(function (fn) { fn(); });
+      };
       fetch('/Series/assets/posters/index.json')
         .then(function (r) { return r.ok ? r.json() : {}; })
-        .then(function (map) { posters = map && typeof map === 'object' ? map : {}; cb(); })
-        .catch(function () { posters = {}; cb(); });
+        .then(finish)
+        .catch(function () { finish({}); });
     }
 
     function continueWatching() {
@@ -272,6 +284,22 @@
 
     // Filter the grid as you type; the cards are plain text so this is a
     // substring match on the label.
+    // The catalogue uses each show's own poster once it has one.
+    function decorateCatalogue() {
+      var cards = document.querySelectorAll('.season-card');
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var match = /\/Series\/([^\/]+)\/[^\/]*\.html$/.exec(card.getAttribute('href') || '');
+        if (!match) continue;
+        var slug = posterSlug(decodeURIComponent(match[1]));
+        var extension = posters[slug];
+        if (!extension) continue;
+        card.classList.add('has-poster');
+        card.style.backgroundImage = 'url("/Series/assets/posters/' + slug + '.' + extension +
+          '?v=' + (posters.__version || 1) + '")';
+      }
+    }
+
     function setupFilter() {
       var input = document.getElementById('seriesFilter');
       var empty = document.getElementById('filterEmpty');
@@ -349,6 +377,7 @@
       setupFilter();
       setupProgressPanel();
       continueWatching();
+      loadPosters(decorateCatalogue);
       if (resumeBtn) {
         resumeBtn.addEventListener('click', function () {
           SeriesAuth.require(resume);
