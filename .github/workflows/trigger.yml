@@ -1,11 +1,44 @@
-name: Trigger Transcribe VTT (all assets)
+name: Sync subtitles (whole release)
 
+# Thin launcher: dispatches the syncer once and lets it fan out over the
+# release's videos itself, so one click never burns a dispatch per episode.
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release Tag'
+        description: "Release holding the videos (e.g. v1.2.0)"
         required: true
+        type: string
+      model:
+        description: "Whisper model"
+        required: true
+        default: distil-large-v3
+        type: choice
+        options:
+          - tiny.en
+          - base.en
+          - small.en
+          - medium.en
+          - distil-large-v3
+          - large-v3
+      mode:
+        description: "align = fix existing timing, replace = rewrite text, missing = only new subs"
+        required: true
+        default: align
+        type: choice
+        options:
+          - align
+          - replace
+          - missing
+      filter:
+        description: "Only assets matching this regex (optional, e.g. Smallville[.]S01)"
+        required: false
+        default: ""
+        type: string
+      max_parallel:
+        description: "How many videos to process at once"
+        required: true
+        default: "4"
         type: string
 
 permissions:
@@ -13,27 +46,31 @@ permissions:
   contents: read
 
 jobs:
-  dispatch-batches:
+  dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Generer og send ut workflows for hver pulje
+      - name: Dispatch the subtitle syncer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ inputs.release_tag }}
           REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag }}
+          MODEL: ${{ inputs.model }}
+          MODE: ${{ inputs.mode }}
+          FILTER: ${{ inputs.filter }}
+          PARALLEL: ${{ inputs.max_parallel }}
         run: |
-           # 1. Finn totalt antall videofiler
-           assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '[.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))]')
-           TOTAL_COUNT=$(echo "$assets" | jq 'length')
-           echo "Totalt antall filer: $TOTAL_COUNT"
-
-           # 2. Trigger transcribe-vtt.yml for hver asset
-           echo "$assets" | jq -r '.[]' | while read -r asset; do
-               echo "Trigger transcribe for: $asset"
-               gh api "repos/$REPO/actions/workflows/transcribe-vtt.yml/dispatches" \
-                 -X POST \
-                 -f "ref=main" \
-                 -f "inputs[release_tag]=$TAG" \
-                 -f "inputs[asset_name]=$asset" \
-                 -f "inputs[model]=large-v3"
-           done
+          set -euo pipefail
+          payload=$(jq -n \
+            --arg ref "$REF" \
+            --arg tag "$TAG" \
+            --arg model "$MODEL" \
+            --arg mode "$MODE" \
+            --arg filter "$FILTER" \
+            --arg parallel "$PARALLEL" \
+            '{ref: $ref, inputs: {release_tag: $tag, model: $model, mode: $mode, filter: $filter, max_parallel: $parallel}}')
+          echo "$payload"
+          echo "$payload" | gh api \
+            "repos/$REPO/actions/workflows/transcribe-vtt.yml/dispatches" \
+            --method POST --input -
+          echo "Dispatched; watch the *Sync subtitles to video* run."

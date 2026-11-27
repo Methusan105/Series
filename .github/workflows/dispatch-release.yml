@@ -1,5 +1,8 @@
 name: Dispatch Release Transcriptions
 
+# Kept for muscle memory: dispatches the syncer per asset. The syncer can also
+# take a whole release in one run (see trigger.yml), which is the cheaper path.
+
 on:
   workflow_dispatch:
     inputs:
@@ -7,7 +10,6 @@ on:
         description: "Release tag (example: v1.0.0)"
         required: true
         type: string
-
       model:
         description: "Whisper model to use for all dispatches"
         required: true
@@ -19,6 +21,16 @@ on:
           - small.en
           - medium.en
           - distil-large-v3
+          - large-v3
+      mode:
+        description: "align = fix existing timing, replace = rewrite text, missing = only new subs"
+        required: true
+        default: align
+        type: choice
+        options:
+          - align
+          - replace
+          - missing
 
 permissions:
   contents: read
@@ -27,52 +39,39 @@ permissions:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Get MP4 assets from release
+      - name: Get video assets from the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag }}
         run: |
-          echo "Checking release: ${{ github.event.inputs.release_tag }}"
-
-          gh release view \
-            "${{ github.event.inputs.release_tag }}" \
-            --repo "${{ github.repository }}" \
-            --json assets \
-            --jq '.assets[]
-
-              | select(.name | endswith(".mp4"))
-              | .name' > assets.txt
-
-          echo "Found assets:"
+          set -euo pipefail
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            --jq '.assets[].name | select(test("\\.(mp4|mkv|mov|avi|webm)$"; "i"))' | sort > assets.txt
           cat assets.txt
-
           if [ ! -s assets.txt ]; then
-            echo "No MP4 assets found."
+            echo "::error::no video assets in release $TAG"
             exit 1
           fi
 
-      - name: Start transcription workflow for each asset
+      - name: Start the syncer for each asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag }}
+          MODEL: ${{ inputs.model }}
+          MODE: ${{ inputs.mode }}
         run: |
-          while read -r asset
-          do
-            echo "Dispatching transcription for:"
-            echo "$asset"
-
-            url="https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.release_tag }}/$asset"
-
-            echo "Download URL:"
-            echo "$url"
-
-            # Triggers your exact target workflow and forwards the model selection
-            gh workflow run transcribe-vtt.yml \
-              --repo "${{ github.repository }}" \
-              --ref "${{ github.ref_name }}" \
-              -f release_tag="${{ github.event.inputs.release_tag }}" \
-              -f asset_name="$asset" \
-              -f mp4_url="$url" \
-              -f model="${{ github.event.inputs.model }}"
-
+          set -euo pipefail
+          while read -r asset; do
+            [ -n "$asset" ] || continue
+            echo "Dispatching: $asset"
+            payload=$(jq -n --arg ref "$REF" --arg tag "$TAG" --arg asset "$asset" \
+              --arg model "$MODEL" --arg mode "$MODE" \
+              '{ref: $ref, inputs: {release_tag: $tag, asset_name: $asset, model: $model, mode: $mode}}')
+            echo "$payload" | gh api \
+              "repos/$REPO/actions/workflows/transcribe-vtt.yml/dispatches" \
+              --method POST --input -
           done < assets.txt
