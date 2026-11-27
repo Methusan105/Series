@@ -553,6 +553,41 @@ var SeriesAuth = (function () {
   };
 })();
 
+// ============================================================
+// Viewport fit - the player.css 16:9 box is capped against the
+// space below it, and that space differs per device (a TV footer
+// is taller, a narrow laptop wraps it onto two rows). Measure the
+// real footer/hint instead of guessing a reserve.
+// ============================================================
+function measurePlayerChrome() {
+  var container = document.querySelector('.video-container');
+  if (!container) return null;
+  var cs = window.getComputedStyle(container);
+  var total = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  var below = container.querySelectorAll('.player-footer, .hint');
+  for (var i = 0; i < below.length; i++) {
+    var style = window.getComputedStyle(below[i]);
+    total += below[i].offsetHeight + (parseFloat(style.marginTop) || 0);
+  }
+  return total;
+}
+
+function fitPlayerToViewport() {
+  var reserve = measurePlayerChrome();
+  if (reserve === null) return;
+  document.documentElement.style.setProperty('--player-chrome', Math.ceil(reserve + 12) + 'px');
+}
+
+var fitQueued = false;
+function queuePlayerFit() {
+  if (fitQueued) return;
+  fitQueued = true;
+  requestAnimationFrame(function () {
+    fitQueued = false;
+    fitPlayerToViewport();
+  });
+}
+
 // Clear progress in the Gist and confirm it is gone before calling back.
 // cb(true) when the gist really has no progress, cb(false) otherwise.
 function clearGistProgress(cb) {
@@ -770,4 +805,12 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   // Account control: sign-in for guests, sign-out when syncing is on.
   SeriesAuth.mountAccount();
+
+  // Size the player to this device's viewport, now that the footer is final.
+  fitPlayerToViewport();
+  window.addEventListener('resize', queuePlayerFit);
+  window.addEventListener('orientationchange', queuePlayerFit);
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (evt) {
+    document.addEventListener(evt, queuePlayerFit, false);
+  });
 });
