@@ -1,0 +1,262 @@
+name: Convert release audio to AAC (MP4)
+
+# Release asset uploads fire no event of their own, so this runs when a release
+# is published with its videos attached. Attach assets first, then publish, or
+# push the assets and re-run this by hand for that tag.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release holding the videos (e.g. v1.2.0)"
+        required: true
+        type: string
+      probe_only:
+        description: "Only list the audio tracks in each video, convert and upload nothing"
+        required: true
+        default: false
+        type: boolean
+      keep_audio:
+        description: "Audio tracks to keep: all, or indexes/languages (e.g. 0,jpn), or title:<text>"
+        required: true
+        default: "all"
+        type: string
+      drop_audio:
+        description: "Audio tracks to drop: indexes/languages (e.g. 2,und), or title:commentary"
+        required: false
+        default: ""
+        type: string
+      filter:
+        description: "Only assets matching this regex (optional, e.g. Smallville[.]S01)"
+        required: false
+        default: ""
+        type: string
+      remove_original:
+        description: "Delete each source file after its AAC MP4 is uploaded"
+        required: true
+        default: keep
+        type: choice
+        options:
+          - keep
+          - delete
+      max_parallel:
+        description: "How many videos to convert at once"
+        required: true
+        default: "4"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aac-mp4-${{ github.event.release.tag_name || inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Collect videos
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.assets.outputs.matrix }}
+      count: ${{ steps.assets.outputs.count }}
+    steps:
+      - name: Read the release asset list
+        id: assets
+        env:
+          # A PAT named TOKEN wins when it exists; otherwise the workflow token,
+          # which needs the contents: write permission declared above.
+          GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          FILTER: ${{ inputs.filter }}
+          KEEP: ${{ inputs.keep_audio || 'all' }}
+          DROP: ${{ inputs.drop_audio || '' }}
+          PROBE: ${{ inputs.probe_only || false }}
+        run: |
+          set -euo pipefail
+          assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
+          mapfile -t videos < <(
+            printf '%s\n' "$assets" \
+              | grep -Ei '\.(mkv|mp4|mov|m4v|avi|webm|ts|m2ts|wmv|flv)$' \
+              | grep -Eiv '\-aac\.mp4$' \
+              | sort || true
+          )
+          # Two assets sharing a stem (Show.mkv beside Show.mp4, which the old
+          # MKV workflow produces) would both want Show-aac.mp4 and the second
+          # upload would clobber the first, losing that variant outright. Those
+          # stems carry their source extension into the output name instead.
+          declare -A stem_uses=()
+          for name in "${videos[@]}"; do
+            stem=${name%.*}
+            stem_uses[$stem]=$(( ${stem_uses[$stem]:-0} + 1 ))
+          done
+          selected=()
+          for name in "${videos[@]}"; do
+            stem=${name%.*}
+            ext=${name##*.}
+            if [ "${stem_uses[$stem]}" -gt 1 ]; then
+              out="$stem.$ext-aac.mp4"
+            else
+              out="$stem-aac.mp4"
+            fi
+            # A probe still lists a video whose conversion already exists: the
+            # point is to see the source's tracks before choosing any.
+            if [ "$PROBE" != true ] && printf '%s\n' "$assets" | grep -Fxq "$out"; then
+              echo "skip $name: $out already in the release"
+              continue
+            fi
+            if [ -n "$FILTER" ] && ! printf '%s' "$name" | grep -Eqi "$FILTER"; then
+              continue
+            fi
+            selected+=("$name"$'\t'"$out")
+          done
+          echo "count=${#selected[@]}" >> "$GITHUB_OUTPUT"
+          if [ "${#selected[@]}" -eq 0 ]; then
+            echo "Nothing to convert in '$TAG'."
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s\n' "${selected[@]}" | tr '\t' '\n' | paste - -
+          {
+            echo "matrix<<AAC_MP4_MATRIX"
+            printf '%s\n' "${selected[@]}" \
+              | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {asset: .[0], out: .[1]})'
+            echo "AAC_MP4_MATRIX"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### AAC MP4: \`$TAG\`"
+            echo ""
+            if [ "$PROBE" = true ]; then
+              echo "${#selected[@]} video(s) to list, probe only — nothing is converted or uploaded"
+            else
+              echo "${#selected[@]} video(s) queued, keep \`$KEEP\`, drop \`${DROP:-none}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  convert:
+    name: ${{ matrix.asset }}
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel || '4') }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h /
+
+      - name: Install ffmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            for attempt in 1 2 3; do
+              if sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; then
+                break
+              fi
+              echo "apt attempt $attempt failed, retrying"
+              sleep $((attempt * 10))
+            done
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Download the video
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          # gh matches --pattern as a glob, so escape the asset's own metacharacters
+          # to keep names like "Show [2024] - S01E01.mkv" matching only themselves.
+          pattern=$(printf '%s' "$ASSET" | sed -e 's/\\/\\\\/g' -e 's/\*/\\*/g' -e 's/?/\\?/g' -e 's/\[/\\[/g' -e 's/\]/\\]/g')
+          for attempt in 1 2 3 4; do
+            if gh release download "$TAG" --repo "$REPO" --pattern "$pattern" --dir dl --clobber; then
+              break
+            fi
+            echo "download attempt $attempt failed, retrying"
+            sleep $((attempt * 15))
+          done
+          ls -lh dl
+          files=(dl/*)
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one downloaded file for '$ASSET', found ${#files[@]}"
+            exit 1
+          fi
+
+      - name: Probe audio tracks and remux to AAC MP4
+        env:
+          OUT: ${{ matrix.out }}
+          KEEP: ${{ inputs.keep_audio || 'all' }}
+          DROP: ${{ inputs.drop_audio || '' }}
+          PROBE: ${{ inputs.probe_only || false }}
+        run: |
+          set -euo pipefail
+          input=$(find dl -type f -print -quit)
+          opts=(--keep "$KEEP" --drop "$DROP")
+          if [ "$PROBE" = true ]; then
+            opts+=(--dry-run)
+          fi
+          bash .github/scripts/aac-mp4.sh "$input" "$OUT" "${opts[@]}" | tee convert.log
+          if [ "$PROBE" = true ]; then
+            echo "Probe only: nothing written, nothing uploaded."
+            exit 0
+          fi
+          ls -lh "$OUT"
+          size=$(stat -c%s "$OUT")
+          if [ "$size" -ge $((2 * 1024 * 1024 * 1024)) ]; then
+            echo "::error::$OUT is $((size / 1024 / 1024)) MiB, over GitHub's 2 GiB release asset limit"
+            exit 1
+          fi
+
+      - name: Upload to the release
+        if: github.event_name != 'workflow_dispatch' || inputs.probe_only != true
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          OUT: ${{ matrix.out }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" "$OUT" --repo "$REPO" --clobber
+
+      - name: Remove the source asset
+        if: github.event_name == 'workflow_dispatch' && inputs.remove_original == 'delete' && inputs.probe_only != true
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          ASSET: ${{ matrix.asset }}
+        run: gh release delete-asset "$TAG" "$ASSET" --repo "$REPO" -y
+
+      - name: Summarize
+        if: always()
+        env:
+          ASSET: ${{ matrix.asset }}
+          OUT: ${{ matrix.out }}
+        run: |
+          {
+            echo "### \`$ASSET\` → \`$OUT\`"
+            echo ""
+            if [ -f convert.log ]; then
+              echo '```'
+              cat convert.log
+              echo '```'
+            else
+              echo "No track report: the conversion did not finish. See the job log."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
