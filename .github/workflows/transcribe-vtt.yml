@@ -134,19 +134,59 @@ jobs:
         run: |
           asset="${{ github.event.inputs.asset_name }}"
           vtt_file="${asset%.mp4}.vtt"
-          show=$(echo "$asset" | sed -E 's/^(.+)\.S[0-9]{2}E[0-9]{2}.*$/\1/')
-          season=$(echo "$asset" | sed -E 's/^.+\.(S[0-9]{2})E[0-9]{2}.*$/\1/')
+          show=$(echo "$asset" | sed -E 's/^(.+)\\.S[0-9]{2}E[0-9]{2}.*$/\\1/')
+          season=$(echo "$asset" | sed -E 's/^.+\\.(S[0-9]{2})E[0-9]{2}.*$/\\1/')
           target_dir="${show}/${season}/Subs"
           existing="${target_dir}/${vtt_file}"
-
-
           mkdir -p "$target_dir"
-          if [ -f "$existing" ]; then
-            cp transcribed.vtt "$existing"
-          else
-            mkdir -p "$target_dir"
-            cp transcribed.vtt "$existing"
-          fi
+
+          EXISTING="$existing" python - <<'PY2'
+          import re, os
+
+          def parse(path):
+              cues = []
+              with open(path, encoding='utf-8') as f:
+                  for line in f:
+                      m = re.match(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', line)
+                      if m:
+                          def tosec(t):
+                              h,mm,s = t.split(':')
+                              return int(h)*3600 + int(mm)*60 + float(s)
+                          cues.append(tosec(m.group(1)))
+              return cues
+
+          def to_ts(sec):
+              if sec < 0: sec = 0
+              h = int(sec//3600); m = int((sec%3600)//60); s = sec%60
+              ms = int((s%1)*1000)
+              return f"{h:02}:{m:02}:{int(s):02}.{ms:03}"
+
+          existing = os.environ['EXISTING']
+          trans = parse('transcribed.vtt')
+          if not os.path.exists(existing):
+              import shutil; shutil.copy('transcribed.vtt', existing); raise SystemExit
+
+          exist = parse(existing)
+          best = (0.0, -1)
+          for i in range(-60, 61):
+              off = i * 0.5
+              cnt = sum(1 for t in trans for e in exist if abs((e + off) - t) <= 1.0)
+              if cnt > best[1]:
+                  best = (off, cnt)
+          offset = best[0]
+          print(f"Best offset: {offset:+.1f}s ({best[1]} matches)")
+
+          with open(existing, encoding='utf-8') as f:
+              content = f.read()
+          def shift_ts(ts):
+              h,mm,s = ts.split(':')
+              return to_ts(int(h)*3600 + int(mm)*60 + float(s) + offset)
+          def repl(m):
+              return f"{shift_ts(m.group(1))} --> {shift_ts(m.group(2))}"
+          new = re.sub(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', repl, content)
+          with open(existing, 'w', encoding='utf-8') as f:
+              f.write(new)
+          PY2
 
       - name: Commit and push VTT to dynamically generated folder path
         run: |
