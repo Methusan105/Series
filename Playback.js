@@ -260,8 +260,11 @@ var SeriesAuth = (function () {
       file[key] = src[key];
     });
 
+    // This site's section is replaced outright by `entries`; the other site's
+    // is carried over untouched. Merging here would make a clear a no-op.
     var sections = { series: {}, movies: {} };
     ['series', 'movies'].forEach(function (name) {
+      if (name === SECTION) return;
       var bucket = src[name];
       if (bucket && typeof bucket === 'object') {
         Object.keys(bucket).forEach(function (url) { coalesce(sections[name], url, bucket[url]); });
@@ -269,10 +272,11 @@ var SeriesAuth = (function () {
     });
     if (src.episodes && typeof src.episodes === 'object') {
       Object.keys(src.episodes).forEach(function (url) {
+        if (sectionOf(url) === SECTION) return;
         coalesce(sections[sectionOf(url)], url, src.episodes[url]);
       });
     }
-    Object.keys(entries).forEach(function (url) { sections[SECTION][absolute(url)] = entries[url]; });
+    Object.keys(entries).forEach(function (url) { coalesce(sections[SECTION], url, entries[url]); });
 
     file.series = sections.series;
     file.movies = sections.movies;
@@ -724,6 +728,104 @@ var SeriesAuth = (function () {
     attempt();
   }
 
+  // How many titles this site is holding a position for.
+  function savedCount() {
+    return Object.keys(normalize(readLocal()).episodes).length;
+  }
+
+  function isSaved(url) {
+    return !!normalize(readLocal()).episodes[absolute(url)];
+  }
+
+  // Whether anything under a folder has a saved position — i.e. this show has
+  // been started, even if the page you clicked is not the saved one.
+  function hasSavedUnder(prefix) {
+    var key = absolute(prefix);
+    return Object.keys(normalize(readLocal()).episodes).some(function (url) {
+      return url.indexOf(key) === 0;
+    });
+  }
+
+  // Asked when someone leaves for another title: keep the saves and add this
+  // one, or wipe them and start fresh. cb('keep' | 'clear' | 'cancel').
+  function askKeepOrClear(options, cb) {
+    if (document.getElementById('seriesSwitchOverlay')) return;
+    var opener = document.activeElement;
+    var unit = options.unit || 'titles';
+    var word = options.count === 1 ? unit.replace(/s$/, '') : unit;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'seriesSwitchOverlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'ssTitle');
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:99999', 'padding:16px', 'box-sizing:border-box',
+      'background:rgba(0,0,0,0.88)', 'backdrop-filter:blur(10px)', '-webkit-backdrop-filter:blur(10px)',
+      'display:flex', 'align-items:center', 'justify-content:center', 'overflow-y:auto',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif'
+    ].join(';');
+
+    var card = document.createElement('div');
+    card.style.cssText = 'width:min(430px,92vw);background:#141414;border:1px solid #333;border-radius:16px;padding:32px 28px;box-shadow:0 20px 60px rgba(0,0,0,0.7);color:#e5e5e5;box-sizing:border-box;margin:auto';
+    card.innerHTML = [
+      '<h2 id="ssTitle" style="margin:0 0 8px;font-size:21px;font-weight:800;color:#fff">Start fresh?</h2>',
+      '<p style="margin:0 0 22px;color:#a5a5a5;font-size:14px;line-height:1.45">',
+      'You have <strong style="color:#e5e5e5">' + options.count + ' ' + word + '</strong> saved.',
+      ' Watching <strong style="color:#e5e5e5">' + String(options.title).replace(/[<>&]/g, '') + '</strong> can keep them',
+      ' or clear them first.',
+      '</p>'
+    ].join('');
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    function close(choice) {
+      document.removeEventListener('keydown', onKey, true);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (opener && opener.focus) { try { opener.focus(); } catch (e) {} }
+      if (typeof cb === 'function') cb(choice);
+    }
+
+    function onKey(event) {
+      if (event.key === 'Escape' || event.key === 'Esc') {
+        event.preventDefault();
+        close('cancel');
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      var items = card.querySelectorAll('button');
+      if (!items.length) return;
+      var first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+
+    var keep = document.createElement('button');
+    keep.type = 'button';
+    keep.textContent = 'Keep them and watch';
+    keep.style.cssText = 'display:block;width:100%;padding:13px;border:none;border-radius:8px;background:#e50914;color:#fff;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px';
+    keep.addEventListener('click', function () { close('keep'); });
+
+    var clear = document.createElement('button');
+    clear.type = 'button';
+    clear.textContent = 'Clear my saves';
+    clear.style.cssText = 'display:block;width:100%;padding:12px;border:1px solid rgba(229,9,20,0.6);border-radius:8px;background:transparent;color:#f2b4b8;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px';
+    clear.addEventListener('click', function () { close('clear'); });
+
+    var cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Stay here';
+    cancel.style.cssText = 'display:block;width:100%;padding:10px;border:none;border-radius:8px;background:transparent;color:#8f8f8f;font-size:13px;cursor:pointer';
+    cancel.addEventListener('click', function () { close('cancel'); });
+
+    card.appendChild(keep);
+    card.appendChild(clear);
+    card.appendChild(cancel);
+
+    document.addEventListener('keydown', onKey, true);
+    keep.focus();
+  }
+
   // Gist sync first: a signed-in viewer goes straight through, a guest is
   // offered sign-in and may skip it. cb(creds) gets null for a guest, whose
   // progress stays in this browser.
@@ -1037,6 +1139,10 @@ var SeriesAuth = (function () {
     hasProgress: hasProgress,
     readLocal: readLocal,
     seriesKey: seriesKey,
+    savedCount: savedCount,
+    isSaved: isSaved,
+    hasSavedUnder: hasSavedUnder,
+    askKeepOrClear: askKeepOrClear,
     progressLimit: progressLimit,
     limitChoices: LIMIT_CHOICES,
     setProgressLimit: setProgressLimit,
