@@ -108,8 +108,12 @@
       loadPosters(function () { renderContinue(); });
 
       function renderContinue() {
-      SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
-        if (!items || !items.length) {
+      SeriesAuth.fetchLibrary(SeriesAuth.get(), function (all) {
+        // This origin is shared with the movies site; list only our own titles.
+        var items = (all || []).filter(function (item) {
+          return new URL(item.url, window.location.href).pathname.indexOf('/Series/') === 0;
+        });
+        if (!items.length) {
           row.textContent = '';
           section.hidden = true;
           return;
@@ -282,12 +286,15 @@
 
       function render() {
         select.value = String(SeriesAuth.progressLimit());
-        SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
+        SeriesAuth.fetchLibrary(SeriesAuth.get(), function (all) {
+          var items = (all || []).filter(function (item) {
+            return new URL(item.url, window.location.href).pathname.indexOf('/Series/') === 0;
+          });
           var shows = {};
-          (items || []).forEach(function (item) {
+          items.forEach(function (item) {
             shows[SeriesAuth.seriesKey(item.url) || item.url] = true;
           });
-          count.textContent = String((items || []).length);
+          count.textContent = String(items.length);
           document.getElementById('showCount').textContent = String(Object.keys(shows).length);
         });
       }
