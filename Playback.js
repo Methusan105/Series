@@ -253,7 +253,10 @@ var SeriesAuth = (function () {
     var src = base && typeof base === 'object' ? base : {};
     var file = {};
     Object.keys(src).forEach(function (key) {
-      if (key === 'episodes' || key === 'series' || key === 'movies' || key === 'progress' || key === 'url') return;
+      // Only the two sections survive; the old flat fields and loose `last`
+      // pointer are folded into them and dropped.
+      if (key === 'episodes' || key === 'series' || key === 'movies' ||
+          key === 'progress' || key === 'url' || key === 'last') return;
       file[key] = src[key];
     });
 
@@ -273,10 +276,6 @@ var SeriesAuth = (function () {
 
     file.series = sections.series;
     file.movies = sections.movies;
-
-    var newest = newestOf(sections[SECTION]);
-    file.progress = newest ? sections[SECTION][newest].progress : 0;
-    file.url = newest || null;
     return file;
   }
 
