@@ -2,16 +2,15 @@
 
 Thirty posters are already here, pulled from the [TVMaze](https://www.tvmaze.com)
 API (their public API needs no key; images stay the property of their rights
-holders and are used here to illustrate the shows). Most came from TVMaze's 16:9
-"background" art; Gachiakuta, Knuckles and Solo Leveling had only portrait
-posters, so those are centre-cropped to 16:9. All are 640×360 JPEGs, about 50KB
-each.
+holders and are used here to illustrate the shows). Every one is the show's own portrait
+poster, cropped to 2:3 at 400×600 — the shape a streaming service uses for a
+show rather than a still. They are JPEGs of 40–60KB each.
 
 To replace one, drop a file here and list it in `index.json`; the home page's
 Continue watching cards pick it up. Files are looked up as `<slug>.<ext>`.
 
-Any of `.jpg`, `.png` or `.webp` works. 16:9 crops best (the card is a 16:9
-tile), roughly 640x360 is plenty.
+Any of `.jpg`, `.png` or `.webp` works. 2:3 crops best (the card is a portrait
+tile), roughly 400×600 is plenty.
 
 `index.json` maps a slug to its extension so the page never asks for a file
 that isn't there:
