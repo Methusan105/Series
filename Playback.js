@@ -408,8 +408,18 @@ var SeriesAuth = (function () {
 
   var mountSignOut = mountAccount;
 
+  function ensureOverlayStyles() {
+    if (document.getElementById('seriesAuthStyle')) return;
+    var st = document.createElement('style');
+    st.id = 'seriesAuthStyle';
+    // !important because the buttons carry these colours inline.
+    st.textContent = '#siSubmit:hover{background:#f40612!important}#siSkip:hover{border-color:#fff!important;color:#fff!important;background:rgba(255,255,255,0.13)!important}#siImport:hover{color:#fff!important}#siSkip:focus-visible,#siSubmit:focus-visible,#siImport:focus-visible{outline:2px solid #fff;outline-offset:2px}';
+    document.head.appendChild(st);
+  }
+
   function showOverlay(afterLogin, onSkip) {
     if (document.getElementById('seriesAuthOverlay')) return;
+    ensureOverlayStyles();
 
     var overlay = document.createElement('div');
     overlay.id = 'seriesAuthOverlay';
@@ -432,9 +442,10 @@ var SeriesAuth = (function () {
       '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:16px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <button id="siSubmit" type="button" style="width:100%;padding:12px;border:none;border-radius:6px;background:#e50914;color:#fff;font-weight:700;font-size:15px;cursor:pointer;position:relative;z-index:1">Sign In</button>',
       '  <div id="siStatus" style="min-height:18px;margin-top:12px;text-align:center;font-size:13px;color:#a5a5a5;position:relative;z-index:1"></div>',
-      '  <button id="siImport" type="button" style="display:block;width:100%;margin-top:10px;padding:10px;border:none;border-radius:6px;background:transparent;color:#a5a5a5;font-size:13px;cursor:pointer;text-decoration:underline">Import credentials file (.txt)</button>',
+      '  <button id="siSkip" type="button" style="display:block;width:100%;margin-top:4px;padding:12px;border:1px solid rgba(255,255,255,0.32);border-radius:6px;background:rgba(255,255,255,0.07);color:#e5e5e5;font-size:14px;font-weight:600;cursor:pointer;position:relative;z-index:1">Continue as guest</button>',
+      '  <p style="margin:8px 0 16px;text-align:center;color:#8f8f8f;font-size:12px;position:relative;z-index:1">No account needed \u00b7 progress stays in this browser</p>',
+      '  <button id="siImport" type="button" style="display:block;width:100%;padding:10px;border:none;border-top:1px solid rgba(255,255,255,0.1);border-radius:6px;background:transparent;color:#a5a5a5;font-size:13px;cursor:pointer;text-decoration:underline">Import credentials file (.txt)</button>',
       '  <input id="siFile" type="file" accept=".txt" style="display:none" />',
-      '  <button id="siSkip" type="button" style="display:block;width:100%;margin-top:6px;padding:10px;border:none;border-radius:6px;background:transparent;color:#8f8f8f;font-size:13px;cursor:pointer">Continue without signing in \u2014 progress stays in this browser</button>',
       '</div>'
     ].join('');
 
