@@ -145,3 +145,24 @@ body::before{
 @media (max-width:640px) and (pointer:coarse) and (hover:none){
   .back-link{margin:14px 0 0 14px;padding:10px 16px 10px 12px;min-height:44px;}
 }
+
+/* Series page: resume where you left off (filled in by Playback.js) */
+.series-resume{margin:22px auto 0;}
+.series-resume[hidden]{display:none;}
+
+/* Home page filter */
+.filter-bar{max-width:1200px;margin:20px auto 0;padding:0 28px;display:flex;flex-direction:column;gap:10px;}
+.filter-bar input{
+  width:100%;box-sizing:border-box;padding:13px 16px;border-radius:10px;
+  background:var(--card);border:1px solid var(--glass-border);color:var(--text);
+  font-size:15px;font-family:inherit;outline:none;transition:border-color 0.2s;
+  -webkit-appearance:none;appearance:none;
+}
+.filter-bar input::placeholder{color:var(--muted);}
+.filter-bar input:focus{border-color:var(--accent);}
+.filter-bar input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.filter-empty{color:var(--muted);font-size:0.95rem;text-align:center;margin:0;}
+@media (max-width:640px) and (pointer:coarse) and (hover:none){
+  .filter-bar{padding:0 12px;margin-top:14px;}
+  .filter-bar input{font-size:16px;min-height:48px;}
+}
