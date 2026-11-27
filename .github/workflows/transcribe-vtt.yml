@@ -1,225 +1,279 @@
-name: Transcribe MP4 to VTT (compare & fix subs)
+name: Sync subtitles to video
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag where MP4 is stored"
+        description: "Release holding the videos (e.g. v1.2.0)"
         required: true
-
+        type: string
       asset_name:
-        description: "MP4 asset name (e.g., Smallville.S10E01.mp4)"
-        required: true
-
+        description: "Single video asset (leave empty to sync every video in the release)"
+        required: false
+        default: ""
+        type: string
+      filter:
+        description: "Only assets matching this regex (e.g. Smallville[.]S01)"
+        required: false
+        default: ""
+        type: string
       model:
-        description: Whisper model
+        description: "Whisper model (distil-large-v3 is the accuracy/speed sweet spot)"
         required: true
-        default: large-v3
+        default: distil-large-v3
         type: choice
         options:
           - tiny.en
           - base.en
           - small.en
           - medium.en
+          - distil-large-v3
           - large-v3
+      mode:
+        description: "align = fix existing timing, replace = rewrite text from audio, missing = only build subs that do not exist"
+        required: true
+        default: align
+        type: choice
+        options:
+          - align
+          - replace
+          - missing
+      branch:
+        description: "Branch the subtitles are committed to"
+        required: true
+        default: main
+        type: string
+      max_parallel:
+        description: "How many videos to process at once"
+        required: true
+        default: "4"
+        type: string
+      runner:
+        description: "Runner label (ubuntu-latest, or a self-hosted label with more cores or a GPU)"
+        required: true
+        default: ubuntu-latest
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  transcribe:
+  plan:
+    name: Collect videos
     runs-on: ubuntu-latest
-
+    outputs:
+      matrix: ${{ steps.assets.outputs.matrix }}
+      count: ${{ steps.assets.outputs.count }}
     steps:
-      - name: Checkout repository
+      - name: Read the release asset list
+        id: assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag }}
+          ASSET: ${{ inputs.asset_name }}
+          FILTER: ${{ inputs.filter }}
+        run: |
+          set -euo pipefail
+          mapfile -t names < <(
+            gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' \
+              | grep -Ei '\.(mp4|mkv|mov|avi|webm)$' \
+              | sort
+          )
+          selected=()
+          for name in "${names[@]}"; do
+            if [ -n "$ASSET" ] && [ "$name" != "$ASSET" ]; then
+              continue
+            fi
+            if [ -n "$FILTER" ] && ! printf '%s' "$name" | grep -Eqi "$FILTER"; then
+              continue
+            fi
+            selected+=("$name")
+          done
+          count=${#selected[@]}
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no matching video assets in release '$TAG'"
+            exit 1
+          fi
+          printf '%s\n' "${selected[@]}"
+          printf '%s\n' "${selected[@]}" \
+            | jq -R -s 'split("\n") | map(select(length > 0)) | {asset: .}' > matrix.json
+          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Subtitle sync: \`$TAG\`"
+            echo ""
+            echo "$count video(s), model \`${{ inputs.model }}\`, mode \`${{ inputs.mode }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  sync:
+    name: ${{ matrix.asset }}
+    needs: plan
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 350
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: subsync-${{ inputs.release_tag }}-${{ matrix.asset }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 1
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
+          df -h /
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Install Python packages
+      - name: Install faster-whisper
         run: |
           python -m pip install --upgrade pip
-          python -m pip install faster-whisper
-          python -m pip install "av<13"
+          python -m pip install "faster-whisper>=1.0,<2"
 
-      - name: Download MP4
+      - name: Cache Whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-${{ inputs.model }}
+
+      - name: Download the video
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag }}
+          ASSET: ${{ matrix.asset }}
         run: |
-          echo "Downloading asset '${{ github.event.inputs.asset_name }}'..."
+          set -euo pipefail
+          mkdir -p dl
+          for attempt in 1 2 3 4; do
+            if gh release download "$TAG" --repo "$REPO" --pattern "$ASSET" --dir dl --clobber; then
+              break
+            fi
+            echo "download attempt $attempt failed, retrying"
+            sleep $((attempt * 15))
+          done
+          ls -lh dl
+          test -n "$(ls -A dl)"
 
-          gh release download "${{ github.event.inputs.release_tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "${{ github.event.inputs.asset_name }}" \
-            --output input.mp4
-
-          ls -lh input.mp4
-
-      - name: Create transcription script
+      - name: Extract audio
         run: |
-          cat > transcript_to_vtt.py <<'PY'
-          import argparse
-          from faster_whisper import WhisperModel
+          video=$(find dl -type f -print -quit)
+          ffmpeg -nostdin -loglevel error -y -i "$video" -vn -ac 1 -ar 16000 -c:a pcm_s16le audio.wav
+          ls -lh audio.wav
 
+      - name: Sync subtitles
+        env:
+          ASSET: ${{ matrix.asset }}
+          MODEL: ${{ inputs.model }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          python .github/scripts/subsync.py \
+            --asset "$ASSET" \
+            --audio audio.wav \
+            --model "$MODEL" \
+            --mode "$MODE" \
+            --stage out \
+            --report report.json \
+            --repo-root .
 
-          def timestamp(seconds):
-              h = int(seconds // 3600)
-              m = int((seconds % 3600) // 60)
-              s = seconds % 60
-              ms = int((s % 1) * 1000)
-
-              return f"{h:02}:{m:02}:{int(s):02}.{ms:03}"
-
-
-          parser = argparse.ArgumentParser()
-          parser.add_argument("input")
-          parser.add_argument("-o", "--output", required=True)
-          parser.add_argument("-m", "--model", default="large-v3")
-          args = parser.parse_args()
-
-          print(f"Loading faster-whisper model '{args.model}'...")
-          model = WhisperModel(
-              args.model, 
-              device="cpu", 
-              compute_type="int8",
-              cpu_threads=2,
-              num_workers=2
-          )
-
-          print("Transcribing...")
-          segments, info = model.transcribe(
-              args.input,
-              language="en",
-              beam_size=5,
-              vad_filter=True
-          )
-
-          print("Writing VTT...")
-          with open(args.output, "w", encoding="utf-8") as f:
-              f.write("WEBVTT\n\n")
-
-              for segment in segments:
-                  start = timestamp(segment.start)
-                  end = timestamp(segment.end)
-                  text = segment.text.strip()
-
-                  if text:
-                      f.write(f"{start} --> {end}\n")
-                      f.write(text + "\n\n")
-
-          print("Done")
+      - name: Report
+        if: always()
+        run: |
+          if [ -f report.json ]; then
+            python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("report.json"))
+          state = "updated" if r.get("changed") else "left alone"
+          line = f"- **{r['asset']}** {state} → `{r['target']}`"
+          if r.get("method"):
+              line += f" ({r['method']}, offset {r.get('out_offset', r.get('offset', 0)):+.2f}s"
+              if r.get("out_drift_pct") or r.get("drift"):
+                  line += f", drift {r.get('out_drift_pct', r.get('drift')):+.2f}%"
+              line += ")"
+          print(line)
+          if r.get("note"):
+              print(f"  - {r['note']}")
           PY
+          fi
 
-      - name: Run transcription
+      - name: Upload synced subtitle
+        uses: actions/upload-artifact@v4
+        with:
+          name: subs-${{ strategy.job-index }}
+          path: out/
+          retention-days: 3
+          if-no-files-found: ignore
+
+  commit:
+    name: Commit subtitles
+    needs: [plan, sync]
+    if: always() && needs.sync.result != 'cancelled' && needs.sync.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Collect synced subtitles
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: subs-*
+          path: synced
+          merge-multiple: true
+
+      - name: Commit and push
+        env:
+          BRANCH: ${{ inputs.branch }}
+          TAG: ${{ inputs.release_tag }}
         run: |
-          echo "Extracting audio..."
-          ffmpeg -y -i input.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 audio.wav
-
-          python transcript_to_vtt.py \
-            audio.wav \
-            -o "transcribed.vtt" \
-            -m "${{ github.event.inputs.model }}"
-
-          ls -lh transcribed.vtt
-
-      - name: Compare and fix existing VTT timing
-        run: |
-          asset="${{ github.event.inputs.asset_name }}"
-          vtt_file="${asset%.mp4}.vtt"
-          show=$(echo "$asset" | sed -E 's/^(.+)\\.S[0-9]{2}E[0-9]{2}.*$/\\1/')
-          season=$(echo "$asset" | sed -E 's/^.+\\.(S[0-9]{2})E[0-9]{2}.*$/\\1/')
-          target_dir="${show}/${season}/Subs"
-          existing="${target_dir}/${vtt_file}"
-          mkdir -p "$target_dir"
-
-          EXISTING="$existing" python - <<'PY2'
-          import re, os
-
-          def parse(path):
-              cues = []
-              with open(path, encoding='utf-8') as f:
-                  for line in f:
-                      m = re.match(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', line)
-                      if m:
-                          def tosec(t):
-                              h,mm,s = t.split(':')
-                              return int(h)*3600 + int(mm)*60 + float(s)
-                          cues.append(tosec(m.group(1)))
-              return cues
-
-          def to_ts(sec):
-              if sec < 0: sec = 0
-              h = int(sec//3600); m = int((sec%3600)//60); s = sec%60
-              ms = int((s%1)*1000)
-              return f"{h:02}:{m:02}:{int(s):02}.{ms:03}"
-
-          existing = os.environ['EXISTING']
-          trans = parse('transcribed.vtt')
-          if not os.path.exists(existing):
-              import shutil; shutil.copy('transcribed.vtt', existing); raise SystemExit
-
-          exist = parse(existing)
-          best = (0.0, -1)
-          for i in range(-60, 61):
-              off = i * 0.5
-              cnt = sum(1 for t in trans for e in exist if abs((e + off) - t) <= 1.0)
-              if cnt > best[1]:
-                  best = (off, cnt)
-          offset = best[0]
-          print(f"Best offset: {offset:+.1f}s ({best[1]} matches)")
-
-          with open(existing, encoding='utf-8') as f:
-              content = f.read()
-          def shift_ts(ts):
-              h,mm,s = ts.split(':')
-              return to_ts(int(h)*3600 + int(mm)*60 + float(s) + offset)
-          def repl(m):
-              return f"{shift_ts(m.group(1))} --> {shift_ts(m.group(2))}"
-          new = re.sub(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})', repl, content)
-          with open(existing, 'w', encoding='utf-8') as f:
-              f.write(new)
-          PY2
-
-      - name: Commit and push VTT to dynamically generated folder path
-        run: |
-          asset="${{ github.event.inputs.asset_name }}"
-          vtt_file="${asset%.mp4}.vtt"
-
-          # Parse Show and Season from filename pattern (e.g. Smallville.S10E01.mp4)
-          show=$(echo "$asset" | sed -E 's/^(.+)\.S[0-9]{2}E[0-9]{2}.*$/\1/')
-          season=$(echo "$asset" | sed -E 's/^.+\.(S[0-9]{2})E[0-9]{2}.*$/\1/')
-
-          target_dir="${show}/${season}/Subs"
-
-          echo "Target Directory: $target_dir"
-
-          # Configure Git identity
+          set -euo pipefail
+          if [ ! -d synced ]; then
+            echo "Nothing to commit: no subtitle needed changing."
+            exit 0
+          fi
+          mapfile -t files < <(find synced -type f -name '*.vtt' -printf '%P\n' 2>/dev/null | sort)
+          count=${#files[@]}
+          if [ "$count" -eq 0 ]; then
+            echo "Nothing to commit: every subtitle already fits its video."
+            exit 0
+          fi
+          cp -a synced/. .
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config pull.rebase true
-
-          # Create directory and move target VTT file
-          mkdir -p "$target_dir"
-
-          # Stage and commit the VTT file FIRST
-          git add "$target_dir/$vtt_file"
-          git commit -m "Fix subtitle timing for ${asset%.mp4} in $target_dir" || echo "No changes to commit"
-
-          # Clean up ANY remaining temporary/untracked/modified files (like mp4, pycache, etc.)
-          git clean -fd
-          git checkout -- .
-
-          # Fetch latest remote changes and rebase clean local commit
-          git fetch origin main
-          git rebase origin/main
-
-          # Push to repository
-          git push origin main
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for file in "${files[@]}"; do git add -- "$file"; done
+          git commit -m "fix(subs): sync subtitle timing for $count episode(s) from $TAG"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase --autostash origin "$BRANCH" || true
+            if git push origin "HEAD:$BRANCH"; then
+              echo "Pushed $count subtitle(s) to $BRANCH"
+              break
+            fi
+            echo "push attempt $attempt rejected, retrying"
+            sleep $((attempt * 10))
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::could not push after 5 attempts"
+              exit 1
+            fi
+          done
+          {
+            echo ""
+            echo "### Updated $count subtitle file(s)"
+            printf -- '- `%s`\n' "${files[@]:0:40}"
+          } >> "$GITHUB_STEP_SUMMARY"
