@@ -814,7 +814,7 @@ function measurePlayerChrome() {
   if (!container) return null;
   var cs = window.getComputedStyle(container);
   var total = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-  var below = container.querySelectorAll('.player-footer, .hint');
+  var below = container.querySelectorAll('.player-footer, .episode-strip, .hint');
   for (var i = 0; i < below.length; i++) {
     var style = window.getComputedStyle(below[i]);
     total += below[i].offsetHeight + (parseFloat(style.marginTop) || 0);
