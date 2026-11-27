@@ -412,8 +412,33 @@ var SeriesAuth = (function () {
     if (document.getElementById('seriesAuthStyle')) return;
     var st = document.createElement('style');
     st.id = 'seriesAuthStyle';
-    // !important because the buttons carry these colours inline.
-    st.textContent = '#siSubmit:hover{background:#f40612!important}#siSkip:hover{border-color:#fff!important;color:#fff!important;background:rgba(255,255,255,0.13)!important}#siImport:hover{color:#fff!important}#siSkip:focus-visible,#siSubmit:focus-visible,#siImport:focus-visible{outline:2px solid #fff;outline-offset:2px}';
+    // !important because this markup carries its colours and spacing inline.
+    st.textContent = [
+      '#siSubmit:hover{background:#f40612!important}',
+      '#siSkip:hover{border-color:#fff!important;color:#fff!important;background:rgba(255,255,255,0.13)!important}',
+      '#siImport:hover{color:#fff!important}',
+      '#siSkip:focus-visible,#siSubmit:focus-visible,#siImport:focus-visible{outline:2px solid #fff;outline-offset:2px}',
+      /* A phone in landscape has ~390px of height; the card is taller than that,
+         so the overlay has to scroll instead of clipping the buttons away.
+         flex-start + margin:auto centres the card when it fits and starts it at
+         the top when it does not, which centring alone cannot do. */
+      '#seriesAuthOverlay{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:16px;box-sizing:border-box;align-items:flex-start!important}',
+      '#seriesAuthOverlay>div{margin:auto}',
+      /* 16px inputs: anything smaller makes iOS Safari zoom into the field. */
+      '@media(max-width:640px),(max-height:640px){',
+      '  #seriesAuthOverlay>div{padding:24px 20px!important;border-radius:14px!important}',
+      '  #siUser,#siGist,#siToken{font-size:16px!important;padding:13px 14px!important;min-height:46px;box-sizing:border-box}',
+      '  #siSubmit,#siSkip{padding:13px!important;font-size:15px!important;min-height:46px}',
+      '  #siImport{min-height:42px}',
+      '  #siSub{font-size:13px!important;margin-bottom:16px!important}',
+      '}',
+      /* Short screens trade the header for the fields. */
+      '@media(max-height:640px){',
+      '  #seriesAuthOverlay>div>div:first-child{width:48px!important;height:48px!important;margin-bottom:12px!important}',
+      '  #seriesAuthOverlay>div>h2{font-size:22px!important}',
+      '  #siSub{display:none}',
+      '}'
+    ].join('\n');
     document.head.appendChild(st);
   }
 
@@ -436,7 +461,7 @@ var SeriesAuth = (function () {
       '    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,4 20,12 6,20" fill="#fff" stroke="none"/></svg>',
       '  </div>',
       '  <h2 style="margin:0 0 6px;font-size:26px;font-weight:900;text-align:center;color:#fff;position:relative;z-index:1">Sign in</h2>',
-      '  <p style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices</p>',
+      '  <p id="siSub" style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices</p>',
       '  <input id="siUser" type="text" placeholder="GitHub username" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siGist" type="text" placeholder="Gist ID" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:16px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
