@@ -92,8 +92,21 @@ matches() {
 }
 
 declare -a keep_tokens=() drop_tokens=()
-mapfile -t keep_tokens < <(printf '%s' "$keep" | tr ',' '\n' | grep -v '^$' || true)
-mapfile -t drop_tokens < <(printf '%s' "$drop" | tr ',' '\n' | grep -v '^$' || true)
+read_spec() {
+  printf '%s' "$1" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true
+}
+mapfile -t keep_tokens < <(read_spec "$keep")
+mapfile -t drop_tokens < <(read_spec "$drop")
+
+for token in "${keep_tokens[@]}" "${drop_tokens[@]}"; do
+  if [ "${token,,}" = title: ]; then
+    die "empty selector 'title:': give it a title fragment, e.g. title:commentary"
+  fi
+done
+
+join() { local IFS=,; printf '%s' "$*"; }
+keep_desc=$(join "${keep_tokens[@]}")
+drop_desc=$(join "${drop_tokens[@]}")
 
 # Every selector must hit something: a typo would otherwise quietly keep all
 # tracks (or drop none) and, with removal enabled, cost the source file.
@@ -150,12 +163,12 @@ for i in "${!idx[@]}"; do
 
   if ! in_keep "$index" "$language" "$title" "${flags[$i]}"; then
     printf 'audio %d: %-9s %-4s %-4s %-24s dropped (keep=%s did not match)\n' \
-      "$index" "$codec" "${channels}ch" "$language" "[$label]" "$keep"
+      "$index" "$codec" "${channels}ch" "$language" "[$label]" "$keep_desc"
     continue
   fi
   if in_drop "$index" "$language" "$title" "${flags[$i]}"; then
     printf 'audio %d: %-9s %-4s %-4s %-24s dropped (drop=%s matched)\n' \
-      "$index" "$codec" "${channels}ch" "$language" "[$label]" "$drop"
+      "$index" "$codec" "${channels}ch" "$language" "[$label]" "$drop_desc"
     continue
   fi
 
@@ -191,7 +204,7 @@ for i in "${!idx[@]}"; do
   kept=$((kept + 1))
 done
 
-[ "$kept" -gt 0 ] || die "keep=$keep drop=${drop:-none} leaves no audio track in $in"
+[ "$kept" -gt 0 ] || die "keep=$keep_desc drop=${drop_desc:-none} leaves no audio track in $in"
 
 ffmpeg "${args[@]}" "${per_stream[@]}" \
   -map_metadata 0 -map_chapters 0 -movflags +faststart "$out"
