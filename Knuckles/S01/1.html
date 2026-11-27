@@ -150,7 +150,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function persistPosition(pos) {
         var creds = SeriesAuth.get();
-        if (!creds) return;
         var now = new Date().getTime();
         SeriesAuth.writeProgress(creds, {
             "progress": pos,

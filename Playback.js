@@ -67,19 +67,48 @@
 })();
 
 // ============================================================
-// SeriesAuth - persistent (Netflix-style) GitHub Gist sign-in
-// Creds are stored in localStorage so you only sign in once
-// per browser. sessionStorage keys are mirrored for backwards
+// SeriesAuth - watching works signed out.
+// Progress is always written to this browser's localStorage, so
+// any guest can play and resume. Signing in with a GitHub Gist
+// mirrors that progress to GitHub so it follows you across
+// devices; nothing on the site requires it.
+// Creds are stored in localStorage so you only sign in once per
+// browser. sessionStorage keys are mirrored for backwards
 // compatibility with older pages.
 // ============================================================
 var SeriesAuth = (function () {
   var STORE_KEY = 'seriesAuth';
+  var LOCAL_KEY = 'seriesLocalProgress';
   var GIST_FILENAME = 'video_progress.json';
   var LEGACY_KEYS = {
     username: 'githubUsername',
     gistId: 'githubGistId',
     token: 'githubAccessToken'
   };
+
+  // The guest copy of the progress file: same shape as the gist file.
+  function readLocal() {
+    try {
+      var raw = localStorage.getItem(LOCAL_KEY);
+      if (!raw) return null;
+      var data = JSON.parse(raw);
+      return data && typeof data === 'object' ? data : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeLocal(data) {
+    try {
+      if (data) localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+      else localStorage.removeItem(LOCAL_KEY);
+    } catch (e) {}
+  }
+
+  // Sync needs a gist id and a token; without them progress is browser-only.
+  function canSync(creds) {
+    return !!(creds && creds.gistId && creds.token);
+  }
 
   function get() {
     try {
@@ -122,21 +151,31 @@ var SeriesAuth = (function () {
       .catch(function () { cb(false); });
   }
 
+  // Resolve the newest progress: the gist when signed in, otherwise the copy
+  // this browser keeps. Never fails - cb always gets an object or null.
   function fetchProgress(creds, cb) {
+    var local = readLocal();
+    if (!canSync(creds)) {
+      cb(local);
+      return;
+    }
     var headers = authHeaders(creds);
     headers['Accept'] = 'application/vnd.github+json';
     fetch(gistUrl(creds) + '?t=' + Date.now(), { headers: headers })
-      .then(function (r) { return r.json(); })
+      .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        if (data.files && data.files[GIST_FILENAME]) {
-          try {
-            cb(JSON.parse(data.files[GIST_FILENAME].content));
-          } catch (e) { cb(null); }
+        var parsed = null;
+        if (data && data.files && data.files[GIST_FILENAME]) {
+          try { parsed = JSON.parse(data.files[GIST_FILENAME].content); } catch (e) { parsed = null; }
+        }
+        if (parsed && typeof parsed === 'object') {
+          writeLocal(parsed);
+          cb(parsed);
         } else {
-          cb(null);
+          cb(local);
         }
       })
-      .catch(function () { cb(null); });
+      .catch(function () { cb(local); });
   }
 
   var suppressWrites = false;
@@ -152,24 +191,25 @@ var SeriesAuth = (function () {
     return headers;
   }
 
-  // Read video_progress.json straight from the gist. Resolves with the parsed
-  // JSON, or null when the file is missing / unreadable / malformed.
+  // Read video_progress.json from the gist, falling back to this browser's
+  // copy. Resolves with the parsed JSON, or null when there is none.
   function readProgressFile(creds) {
+    if (!canSync(creds)) return Promise.resolve(readLocal());
     var headers = authHeaders(creds);
     headers['Accept'] = 'application/vnd.github+json';
     return fetch(gistUrl(creds) + '?t=' + Date.now(), { headers: headers })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
-        if (!data || !data.files || !data.files[GIST_FILENAME]) return null;
+        if (!data || !data.files || !data.files[GIST_FILENAME]) return readLocal();
         var raw = data.files[GIST_FILENAME].content;
-        if (typeof raw !== 'string') return null;
+        if (typeof raw !== 'string') return readLocal();
         try {
           return JSON.parse(raw);
         } catch (e) {
-          return null;
+          return readLocal();
         }
       })
-      .catch(function () { return null; });
+      .catch(function () { return readLocal(); });
   }
 
   // A file "has progress" when it contains a usable, non-zero position.
@@ -180,6 +220,8 @@ var SeriesAuth = (function () {
 
   function writeProgress(creds, progressData) {
     if (suppressWrites) return writeQueue;
+    writeLocal(progressData);
+    if (!canSync(creds)) return writeQueue;
     writeQueue = writeQueue.then(function () {
       if (suppressWrites) return null;
       var gistData = { files: {} };
@@ -200,6 +242,8 @@ var SeriesAuth = (function () {
   }
 
   function clearProgress(creds) {
+    writeLocal(null);
+    if (!canSync(creds)) return Promise.resolve(null);
     var gistData = { files: {} };
     gistData.files[GIST_FILENAME] = { content: JSON.stringify(12, null, 2) };
     return fetch(gistUrl(creds), {
@@ -217,6 +261,14 @@ var SeriesAuth = (function () {
 
   // PATCH the gist, then re-read it to prove the progress is really gone.
   function clearProgressWithVerification(creds, cb) {
+    if (!canSync(creds)) {
+      // Nothing remote to verify: dropping this browser's copy is enough.
+      writeQueue.then(function () {
+        writeLocal(null);
+        cb(true);
+      });
+      return;
+    }
     var attempts = 0;
     var maxAttempts = 5;
     function retryDelay() {
@@ -253,20 +305,31 @@ var SeriesAuth = (function () {
     attempt();
   }
 
-  // Run cb(creds) once signed in; show sign-in overlay otherwise.
+  // Playback never waits on sign-in: cb gets the stored gist credentials, or
+  // null for a guest whose progress stays in this browser.
   function require(cb) {
-    var creds = get();
-    if (creds) {
-      cb(creds);
-      return;
-    }
+    cb(get());
+  }
+
+  // Force the sign-in overlay, for the account button and any "sign in to
+  // sync" link.
+  function requireFresh(cb) {
     showOverlay(function (newCreds) { cb(newCreds); });
   }
 
-  // Always show the sign-in overlay (used by "Resume Playback" so the
-  // user can confirm credentials or import a .txt file each time).
-  function requireFresh(cb) {
-    showOverlay(function (newCreds) { cb(newCreds); });
+  // Sign in from the account button. The gist takes over when it already holds
+  // progress; a guest's spot is pushed up only when the gist is still empty.
+  function openSignIn(cb) {
+    showOverlay(function (newCreds) {
+      readProgressFile(newCreds).then(function (remote) {
+        if (!hasProgress(remote)) {
+          var local = readLocal();
+          if (hasProgress(local)) writeProgress(newCreds, local);
+        }
+        mountAccount();
+        if (typeof cb === 'function') cb(newCreds);
+      });
+    });
   }
 
   function signOut() {
@@ -282,16 +345,24 @@ var SeriesAuth = (function () {
     document.head.appendChild(st);
   }
 
-  function mountSignOut() {
-    if (document.getElementById('signOutBtn')) return;
+  // One account control for both states: guests get "Sign in to sync",
+  // signed-in viewers get "Sign out".
+  function mountAccount() {
+    var existing = document.getElementById('seriesAccountBtn');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var signedIn = !!get();
     var footer = document.querySelector('.player-footer');
     var btn = document.createElement('button');
-    btn.id = 'signOutBtn';
+    btn.id = 'seriesAccountBtn';
     btn.type = 'button';
-    btn.textContent = 'Sign out';
+    btn.textContent = signedIn ? 'Sign out' : 'Sign in to sync';
     btn.className = 'sign-out-btn';
     btn.addEventListener('click', function () {
-      if (confirm('Sign out on this browser?')) signOut();
+      if (get()) {
+        if (confirm('Sign out on this browser? Progress stays saved in this browser.')) signOut();
+      } else {
+        openSignIn();
+      }
     });
     if (footer) {
       footer.appendChild(btn);
@@ -301,6 +372,8 @@ var SeriesAuth = (function () {
       document.body.appendChild(btn);
     }
   }
+
+  var mountSignOut = mountAccount;
 
   function showOverlay(afterLogin) {
     if (document.getElementById('seriesAuthOverlay')) return;
@@ -320,7 +393,7 @@ var SeriesAuth = (function () {
       '    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,4 20,12 6,20" fill="#fff" stroke="none"/></svg>',
       '  </div>',
       '  <h2 style="margin:0 0 6px;font-size:26px;font-weight:900;text-align:center;color:#fff;position:relative;z-index:1">Sign in</h2>',
-      '  <p style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices</p>',
+      '  <p style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices. Watching works without it \u2014 progress stays in this browser.</p>',
       '  <input id="siUser" type="text" placeholder="GitHub username" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siGist" type="text" placeholder="Gist ID" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:16px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
@@ -328,6 +401,7 @@ var SeriesAuth = (function () {
       '  <div id="siStatus" style="min-height:18px;margin-top:12px;text-align:center;font-size:13px;color:#a5a5a5;position:relative;z-index:1"></div>',
       '  <button id="siImport" type="button" style="display:block;width:100%;margin-top:10px;padding:10px;border:none;border-radius:6px;background:transparent;color:#a5a5a5;font-size:13px;cursor:pointer;text-decoration:underline">Import credentials file (.txt)</button>',
       '  <input id="siFile" type="file" accept=".txt" style="display:none" />',
+      '  <button id="siSkip" type="button" style="display:block;width:100%;margin-top:6px;padding:10px;border:none;border-radius:6px;background:transparent;color:#8f8f8f;font-size:13px;cursor:pointer">Continue without signing in</button>',
       '</div>'
     ].join('');
 
@@ -410,6 +484,7 @@ var SeriesAuth = (function () {
       });
     });
     siImport.addEventListener('click', function () { siFile.click(); });
+    overlay.querySelector('#siSkip').addEventListener('click', function () { overlay.remove(); });
     siFile.addEventListener('change', function (e) {
       if (e.target.files && e.target.files[0]) importFile(e.target.files[0]);
     });
@@ -428,10 +503,14 @@ var SeriesAuth = (function () {
     clearProgressWithVerification: clearProgressWithVerification,
     readProgressFile: readProgressFile,
     hasProgress: hasProgress,
+    readLocal: readLocal,
+    isSignedIn: function () { return !!get(); },
     setSuppressWrites: function (value) { suppressWrites = !!value; },
     require: require,
     requireFresh: requireFresh,
+    openSignIn: openSignIn,
     signOut: signOut,
+    mountAccount: mountAccount,
     mountSignOut: mountSignOut
   };
 })();
@@ -440,10 +519,6 @@ var SeriesAuth = (function () {
 // cb(true) when the gist really has no progress, cb(false) otherwise.
 function clearGistProgress(cb) {
   var creds = SeriesAuth.get();
-  if (!creds) {
-    if (typeof cb === 'function') cb(false);
-    return;
-  }
   SeriesAuth.clearProgressWithVerification(creds, function (verified) {
     if (typeof cb === 'function') cb(verified);
   });
@@ -565,12 +640,6 @@ function setupClearBeforeNavigate() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (!SeriesAuth.get()) {
-      // Nothing stored to clear, keep the previous behaviour.
-      if (href) window.location.href = href;
-      return;
-    }
-
     busy = true;
     navigateAfterClearingProgress(href, function () {
       if (!href) busy = false;
@@ -661,8 +730,6 @@ document.addEventListener('DOMContentLoaded', function () {
       setupEpisodeAutoAdvance(defaultPlayer);
     }
   }
-  // Mount sign-out button if user is already logged in
-  if (SeriesAuth.get()) {
-    SeriesAuth.mountSignOut();
-  }
+  // Account control: sign-in for guests, sign-out when syncing is on.
+  SeriesAuth.mountAccount();
 });

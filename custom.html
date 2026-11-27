@@ -80,7 +80,6 @@ SeriesAuth.require(function () {
 function saveProgress(force) {
   if (recovering) return;
   var creds = SeriesAuth.get();
-  if (!creds) return;
   var now = player.currentTime();
   if (!force && Math.abs(now - lastSavedTime) < 2) return;
   lastSavedTime = now;
@@ -89,7 +88,6 @@ function saveProgress(force) {
 
 function persistPosition(pos) {
   var creds = SeriesAuth.get();
-  if (!creds) return;
   SeriesAuth.writeProgress(creds, {
     "progress": pos,
     "url": window.location.href,

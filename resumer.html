@@ -140,15 +140,14 @@
     <h1>Resumer</h1>
     <p class="subtitle">Restoring your playback progress</p>
     <div class="spinner" id="spinner"></div>
-    <p class="status" id="status">Waiting for sign-in<span class="dots"></span></p>
+    <p class="status" id="status">Loading your progress<span class="dots"></span></p>
   </div>
 
-  <div class="credit">powered by gist sync</div>
+  <div class="credit">progress saved in this browser &middot; gist sync when signed in</div>
 
   <script src="/Series/Playback.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function () {
-      var gistFilename = 'video_progress.json';
       var spinner = document.getElementById('spinner');
       var status = document.getElementById('status');
 
@@ -157,16 +156,14 @@
         if (status) status.innerHTML = text + '<span class="dots"></span>';
       }
 
-      SeriesAuth.require(function () {
-        showLoading('Loading your progress');
-        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
-          if (progressData && progressData.url) {
-            window.location.href = progressData.url;
-          } else {
-            if (spinner) spinner.style.display = 'none';
-            if (status) status.textContent = 'No saved progress found — pick a series from the home page.';
-          }
-        });
+      showLoading('Loading your progress');
+      SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+        if (progressData && progressData.url) {
+          window.location.href = progressData.url;
+        } else {
+          if (spinner) spinner.style.display = 'none';
+          if (status) status.textContent = 'No saved progress found — pick a series from the home page.';
+        }
       });
     });
   </script>
