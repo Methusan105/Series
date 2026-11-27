@@ -9,14 +9,17 @@
 #                     count, keeping the channels (downmixed to 5.1 only above
 #                     eight channels, which is all AAC can hold)
 #
-# <spec> is a comma-separated list of selectors, any of which may be used:
+# <spec> is a comma-separated list of selectors, each anchored to one attribute
+# so a short code can never be mistaken for part of a title:
 #   all             every track (what --keep defaults to)
 #   <number>        the track at that index, as numbered in the report below
-#   <language>      tracks tagged with that ISO code (und = untagged)
+#   <language>      tracks whose language tag equals that code (und = untagged)
+#   title:<text>    tracks whose title contains <text>, e.g. title:commentary
 #   default         tracks the source marks as default
-#   <text>          tracks whose title contains that text, e.g. commentary
+#
 # --keep narrows the output to the union of its selectors; --drop then removes
-# the union of its selectors from whatever is left. Surviving tracks keep their
+# the union of its selectors from whatever is left. A selector that matches no
+# track is an error rather than a silent no-op. Surviving tracks keep their
 # input order, language tag and default flag, so one dub stays the default.
 #
 # MP4 has no per-track title field, so track titles cannot come across; the
@@ -61,6 +64,18 @@ audio=$(jq -r '[.streams[] | select(.codec_type == "audio")] | to_entries[] |
    (.value.tags.title // "-"), ((.value.disposition.default // 0) | tostring)] | @tsv' <<<"$probe")
 [ -n "$audio" ] || die "$in has no audio stream, so there is nothing to convert"
 
+declare -a idx=() codecs=() chans=() langs=() titles=() flags=()
+mapfile -t rows <<<"$audio"
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r i c n l t f <<<"$row"
+  idx+=("$i")
+  codecs+=("$c")
+  chans+=("$n")
+  langs+=("${l/#-/und}")
+  titles+=("$t")
+  flags+=("$f")
+done
+
 matches() {
   local token=${1,,} index=$2 language=${3,,} title=${4,,} is_default=$5
   case $token in
@@ -70,19 +85,44 @@ matches() {
   if [[ $token =~ ^[0-9]+$ ]]; then
     [ "$token" = "$index" ] && return 0 || return 1
   fi
-  [ "$token" = "$language" ] && return 0
-  [[ $title == *"$token"* ]]
+  if [[ $token == title:* ]]; then
+    [[ $title == *"${token#title:}"* ]] && return 0 || return 1
+  fi
+  [ "$token" = "$language" ]
 }
 
-selected_by() {
-  local spec=$1 token
-  local IFS=,
-  for token in $spec; do
-    [ -n "$token" ] || continue
-    matches "$token" "$2" "$3" "$4" "$5" && return 0
+declare -a keep_tokens=() drop_tokens=()
+mapfile -t keep_tokens < <(printf '%s' "$keep" | tr ',' '\n' | grep -v '^$' || true)
+mapfile -t drop_tokens < <(printf '%s' "$drop" | tr ',' '\n' | grep -v '^$' || true)
+
+# Every selector must hit something: a typo would otherwise quietly keep all
+# tracks (or drop none) and, with removal enabled, cost the source file.
+declare -A keep_hits=() drop_hits=()
+inventory=
+for i in "${!idx[@]}"; do
+  inventory+="${idx[$i]}:${langs[$i]}[${titles[$i]/#-/${langs[$i]}}] "
+done
+for token in "${keep_tokens[@]}"; do
+  for i in "${!idx[@]}"; do
+    if matches "$token" "${idx[$i]}" "${langs[$i]}" "${titles[$i]}" "${flags[$i]}"; then
+      keep_hits[$token]=1
+      break
+    fi
   done
-  return 1
-}
+  [ "${keep_hits[$token]:-}" = 1 ] || die "keep=$token matches no audio track; tracks are: $inventory (title:<text> matches a title)"
+done
+for token in "${drop_tokens[@]}"; do
+  for i in "${!idx[@]}"; do
+    if matches "$token" "${idx[$i]}" "${langs[$i]}" "${titles[$i]}" "${flags[$i]}"; then
+      drop_hits[$token]=1
+      break
+    fi
+  done
+  [ "${drop_hits[$token]:-}" = 1 ] || die "drop=$token matches no audio track; tracks are: $inventory (title:<text> matches a title)"
+done
+
+in_keep() { local token; for token in "${keep_tokens[@]}"; do matches "$token" "$@" && return 0; done; return 1; }
+in_drop() { local token; for token in "${drop_tokens[@]}"; do matches "$token" "$@" && return 0; done; return 1; }
 
 printf 'video: %s (copied)\n' "$video_codec"
 
@@ -96,24 +136,24 @@ declare -a per_stream=()
 tracks=0
 kept=0
 claimed_default=0
-mapfile -t rows <<<"$audio"
-for row in "${rows[@]}"; do
-  IFS=$'\t' read -r index codec channels language title is_default <<<"$row"
+for i in "${!idx[@]}"; do
+  index=${idx[$i]}
+  codec=${codecs[$i]}
+  channels=${chans[$i]}
+  language=${langs[$i]}
+  title=${titles[$i]}
   if [ "$title" = - ]; then
-    label=${language/#-/und}
+    label=$language
   else
     label=$title
   fi
-  if [ "$language" = - ]; then
-    language=und
-  fi
 
-  if ! selected_by "$keep" "$index" "$language" "$title" "$is_default"; then
+  if ! in_keep "$index" "$language" "$title" "${flags[$i]}"; then
     printf 'audio %d: %-9s %-4s %-4s %-24s dropped (keep=%s did not match)\n' \
       "$index" "$codec" "${channels}ch" "$language" "[$label]" "$keep"
     continue
   fi
-  if [ -n "$drop" ] && selected_by "$drop" "$index" "$language" "$title" "$is_default"; then
+  if in_drop "$index" "$language" "$title" "${flags[$i]}"; then
     printf 'audio %d: %-9s %-4s %-4s %-24s dropped (drop=%s matched)\n' \
       "$index" "$codec" "${channels}ch" "$language" "[$label]" "$drop"
     continue
@@ -139,7 +179,7 @@ for row in "${rows[@]}"; do
       conversion="aac $bitrate (from $codec ${channels}ch)"
     fi
   fi
-  if [ "$is_default" = 1 ] && [ "$claimed_default" = 0 ]; then
+  if [ "${flags[$i]}" = 1 ] && [ "$claimed_default" = 0 ]; then
     per_stream+=(-disposition:a:"$tracks" default)
     claimed_default=1
   else

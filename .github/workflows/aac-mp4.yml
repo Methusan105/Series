@@ -13,12 +13,12 @@ on:
         required: true
         type: string
       keep_audio:
-        description: "Audio tracks to keep: all, or indexes/languages/titles (e.g. 0,jpn)"
+        description: "Audio tracks to keep: all, or indexes/languages (e.g. 0,jpn), or title:<text>"
         required: true
         default: "all"
         type: string
       drop_audio:
-        description: "Audio tracks to drop: indexes/languages/titles (e.g. 2,commentary)"
+        description: "Audio tracks to drop: indexes/languages (e.g. 2,und), or title:commentary"
         required: false
         default: ""
         type: string
