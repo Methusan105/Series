@@ -136,6 +136,20 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost || true
           df -h /
 
+      - name: Install ffmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            for attempt in 1 2 3; do
+              if sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; then
+                break
+              fi
+              echo "apt attempt $attempt failed, retrying"
+              sleep $((attempt * 10))
+            done
+          fi
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
