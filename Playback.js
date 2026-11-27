@@ -81,6 +81,8 @@ var SeriesAuth = (function () {
   var LOCAL_KEY = 'seriesLocalProgress';
   var GUEST_KEY = 'seriesGuestMode';
   var GIST_FILENAME = 'video_progress.json';
+  // Both sites share one gist file, each owning one section of it.
+  var SECTION = 'series';
   var LEGACY_KEYS = {
     username: 'githubUsername',
     gistId: 'githubGistId',
@@ -193,27 +195,89 @@ var SeriesAuth = (function () {
     return !!document.getElementById('my-video');
   }
 
+  function sectionOf(url) {
+    return /\/Movies\//.test(String(url)) ? 'movies' : 'series';
+  }
+
+  function inThisSection(url) {
+    return sectionOf(url) === SECTION;
+  }
+
+  function newestOf(entries) {
+    var urls = Object.keys(entries);
+    if (!urls.length) return null;
+    urls.sort(function (a, b) {
+      return (entries[b].updatedAt || 0) - (entries[a].updatedAt || 0);
+    });
+    return urls[0];
+  }
+
+  function coalesce(into, url, entry) {
+    if (!entry || typeof entry.progress !== 'number') return;
+    var key = absolute(url);
+    // Two keys can collapse onto one once the query string is stripped; the
+    // newer position is the one worth keeping.
+    if (!into[key] || (entry.updatedAt || 0) > (into[key].updatedAt || 0)) into[key] = entry;
+  }
+
+  // This site's entries, from the sectioned file, an older `episodes` file or
+  // the original single pointer.
   function normalize(data) {
-    var out = { episodes: {} };
-    if (!data || typeof data !== 'object') return out;
+    var entries = {};
+    if (!data || typeof data !== 'object') return { episodes: {} };
+
+    var bucket = data[SECTION];
+    if (bucket && typeof bucket === 'object') {
+      Object.keys(bucket).forEach(function (url) { coalesce(entries, url, bucket[url]); });
+      return { episodes: entries, last: newestOf(entries) };
+    }
+
     if (data.episodes && typeof data.episodes === 'object') {
       Object.keys(data.episodes).forEach(function (url) {
-        var entry = data.episodes[url];
-        if (!entry || typeof entry.progress !== 'number') return;
-        var key = absolute(url);
-        var existing = out.episodes[key];
-        // Two keys can collapse onto one once the query string is stripped;
-        // the newer position is the one worth keeping.
-        if (!existing || (entry.updatedAt || 0) > (existing.updatedAt || 0)) out.episodes[key] = entry;
+        if (inThisSection(url)) coalesce(entries, url, data.episodes[url]);
       });
-      out.last = data.last ? absolute(data.last) : null;
-      return out;
+      return { episodes: entries, last: newestOf(entries) };
     }
-    if (typeof data.progress === 'number' && data.url) {
-      out.episodes[absolute(data.url)] = { progress: data.progress, updatedAt: Date.now() };
-      out.last = absolute(data.url);
+
+    if (typeof data.progress === 'number' && data.url && inThisSection(data.url)) {
+      coalesce(entries, data.url, { progress: data.progress, updatedAt: Date.now() });
+      return { episodes: entries, last: newestOf(entries) };
     }
-    return out;
+
+    return { episodes: {} };
+  }
+
+  // The whole file for the gist: both sections preserved, older flat files folded
+  // into them on the way through.
+  function buildFile(base, entries) {
+    var src = base && typeof base === 'object' ? base : {};
+    var file = {};
+    Object.keys(src).forEach(function (key) {
+      if (key === 'episodes' || key === 'series' || key === 'movies' || key === 'progress' || key === 'url') return;
+      file[key] = src[key];
+    });
+
+    var sections = { series: {}, movies: {} };
+    ['series', 'movies'].forEach(function (name) {
+      var bucket = src[name];
+      if (bucket && typeof bucket === 'object') {
+        Object.keys(bucket).forEach(function (url) { coalesce(sections[name], url, bucket[url]); });
+      }
+    });
+    if (src.episodes && typeof src.episodes === 'object') {
+      Object.keys(src.episodes).forEach(function (url) {
+        coalesce(sections[sectionOf(url)], url, src.episodes[url]);
+      });
+    }
+    Object.keys(entries).forEach(function (url) { sections[SECTION][absolute(url)] = entries[url]; });
+
+    file.series = sections.series;
+    file.movies = sections.movies;
+
+    var newest = newestOf(sections[SECTION]);
+    file.progress = newest ? sections[SECTION][newest].progress : 0;
+    file.url = newest || null;
+    return file;
   }
 
   function progressAt(data, url) {
@@ -477,15 +541,16 @@ var SeriesAuth = (function () {
   // while holds a stale copy, so building the new file from that copy alone
   // would delete whatever another device saved in the meantime.
   function commit(creds, build) {
-    var local = build(readLocal());
-    writeLocal(local);
+    var base = readLocal();
+    writeLocal(buildFile(base, build(base).episodes));
     if (!canSync(creds)) return writeQueue;
     writeQueue = writeQueue.catch(function () { return null; }).then(function () {
       if (suppressWrites) return null;
       return fetchRemoteStore(creds).then(function (remote) {
-        var store = build(remote || readLocal());
-        writeLocal(store);
-        return patchProgress(creds, store);
+        var source = remote || readLocal();
+        var file = buildFile(source, build(source).episodes);
+        writeLocal(file);
+        return patchProgress(creds, file);
       }, function (e) {
         // Unreadable remote: leave it alone rather than overwrite it with this
         // browser's copy. The local one is already saved.
@@ -513,8 +578,9 @@ var SeriesAuth = (function () {
   function clearProgress(creds) {
     var forget = isEpisodePage()
       ? function (base) { return clearAt(base, currentUrl()); }
-      : function () { return { episodes: {}, last: null, progress: 0, url: null }; };
-    var local = forget(readLocal());
+      : function () { return { episodes: {}, last: null }; };
+    var base = readLocal();
+    var local = buildFile(base, forget(base).episodes);
     writeLocal(local);
     if (!canSync(creds)) return Promise.resolve(local);
 
@@ -522,9 +588,10 @@ var SeriesAuth = (function () {
     // reports failure; the queue itself is reset so later writes still run.
     var done = writeQueue.catch(function () { return null; }).then(function () {
       return fetchRemoteStore(creds).then(function (remote) {
-        var store = forget(remote || readLocal());
-        writeLocal(store);
-        return patchProgress(creds, store);
+        var source = remote || readLocal();
+        var file = buildFile(source, forget(source).episodes);
+        writeLocal(file);
+        return patchProgress(creds, file);
       });
     });
     writeQueue = done.catch(function (e) {
