@@ -300,38 +300,6 @@
       }
     }
 
-    // Choosing another show while saves exist asks whether to keep them or
-    // start fresh. The card's own navigation is taken over so the answer is
-    // always ours: no default action to race with.
-    function setupSwitchGuard() {
-      var cards = document.querySelectorAll('.season-card');
-      Array.prototype.forEach.call(cards, function (card) {
-        card.addEventListener('click', function (event) {
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-          var href = card.getAttribute('href');
-          if (!href) return;
-          event.preventDefault();
-
-          var match = /\/Series\/([^\/]+)\//.exec(href);
-          var folder = match ? '/Series/' + match[1] + '/' : null;
-          var started = folder ? SeriesAuth.hasSavedUnder(folder) : SeriesAuth.isSaved(href);
-          if (started || SeriesAuth.savedCount() === 0) {
-            window.location.href = href;
-            return;
-          }
-
-          var title = match ? decodeURIComponent(match[1]) : card.textContent.trim();
-          SeriesAuth.askKeepOrClear({ title: title, count: SeriesAuth.savedCount(), unit: 'shows' }, function (choice) {
-            if (choice === 'cancel') return;
-            if (choice === 'keep') { window.location.href = href; return; }
-            clearGistProgress(function (ok) {
-              if (ok) window.location.href = href;
-            });
-          });
-        });
-      });
-    }
-
     function setupFilter() {
       var input = document.getElementById('seriesFilter');
       var empty = document.getElementById('filterEmpty');
@@ -407,7 +375,6 @@
     document.addEventListener('DOMContentLoaded', function () {
       var resumeBtn = document.getElementById('resumeBtn');
       setupFilter();
-      setupSwitchGuard();
       setupProgressPanel();
       continueWatching();
       loadPosters(decorateCatalogue);

@@ -1197,6 +1197,41 @@ function mountSeriesResume() {
 }
 
 // ============================================================
+// Catalogue navigation - a card for a title that has not been started
+// asks whether to keep the saved positions or clear them, wherever the
+// card lives (the home grid or a series page's season list).
+// ============================================================
+function mountSwitchGuard() {
+  var cards = document.querySelectorAll('.season-card');
+  Array.prototype.forEach.call(cards, function (card) {
+    card.addEventListener('click', function (event) {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      var href = card.getAttribute('href');
+      if (!href) return;
+      event.preventDefault();
+
+      var match = /\/(Series|Movies)\/([^\/]+)\//.exec(href);
+      var folder = match ? '/' + match[1] + '/' + match[2] + '/' : null;
+      var unit = match && match[1] === 'Movies' ? 'movies' : 'shows';
+      var started = folder ? SeriesAuth.hasSavedUnder(folder) : SeriesAuth.isSaved(href);
+      if (started || SeriesAuth.savedCount() === 0) {
+        window.location.href = href;
+        return;
+      }
+
+      var title = match ? decodeURIComponent(match[2]) : card.textContent.trim();
+      SeriesAuth.askKeepOrClear({ title: title, count: SeriesAuth.savedCount(), unit: unit }, function (choice) {
+        if (choice === 'cancel') return;
+        if (choice === 'keep') { window.location.href = href; return; }
+        clearGistProgress(function (ok) {
+          if (ok) window.location.href = href;
+        });
+      });
+    });
+  });
+}
+
+// ============================================================
 // Viewport fit - the player.css 16:9 box is capped against the
 // space below it, and that space differs per device (a TV footer
 // is taller, a narrow laptop wraps it onto two rows). Measure the
@@ -1462,6 +1497,9 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   // Account control: sign-in for guests, sign-out when syncing is on.
   SeriesAuth.mountAccount();
+
+  // Any catalogue card is a navigation worth asking about.
+  mountSwitchGuard();
 
   // Series pages: point at the episode last watched in that series.
   mountSeriesResume();
