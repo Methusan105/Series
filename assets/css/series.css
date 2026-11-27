@@ -238,3 +238,23 @@ body::before{
 @media (max-width:640px) and (pointer:coarse) and (hover:none){
   .continue-remove{width:34px;height:34px;font-size:18px;}
 }
+
+/* Catalogue tiles: the show's poster with its name over the bottom of it. */
+.season-card.has-poster{
+  min-height:0;aspect-ratio:2/3;padding:12px;
+  align-items:flex-end;justify-content:flex-start;text-align:left;
+  background-size:cover;background-position:center;background-color:#111;
+  font-size:1rem;line-height:1.25;overflow:hidden;
+}
+.season-card.has-poster::after{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,0.88) 100%);
+}
+.season-card.has-poster span{
+  position:relative;z-index:1;text-shadow:0 2px 10px rgba(0,0,0,0.75);
+  padding-right:4px;
+}
+.season-card.has-poster:hover{transform:translateY(-2px);border-color:var(--accent);}
+@media (max-width:640px) and (pointer:coarse) and (hover:none){
+  .season-card.has-poster{font-size:0.9rem;padding:10px;border-radius:12px;}
+}
