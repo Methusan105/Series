@@ -67,11 +67,11 @@
 })();
 
 // ============================================================
-// SeriesAuth - watching works signed out.
-// Progress is always written to this browser's localStorage, so
-// any guest can play and resume. Signing in with a GitHub Gist
-// mirrors that progress to GitHub so it follows you across
-// devices; nothing on the site requires it.
+// SeriesAuth - GitHub Gist sync is the normal path.
+// Signing in is offered first so progress follows you across
+// devices. Skipping it is optional: "Continue without signing in"
+// keeps progress in this browser instead, and that choice is
+// remembered so a guest is not asked again on every page.
 // Creds are stored in localStorage so you only sign in once per
 // browser. sessionStorage keys are mirrored for backwards
 // compatibility with older pages.
@@ -79,6 +79,7 @@
 var SeriesAuth = (function () {
   var STORE_KEY = 'seriesAuth';
   var LOCAL_KEY = 'seriesLocalProgress';
+  var GUEST_KEY = 'seriesGuestMode';
   var GIST_FILENAME = 'video_progress.json';
   var LEGACY_KEYS = {
     username: 'githubUsername',
@@ -108,6 +109,18 @@ var SeriesAuth = (function () {
   // Sync needs a gist id and a token; without them progress is browser-only.
   function canSync(creds) {
     return !!(creds && creds.gistId && creds.token);
+  }
+
+  // Set once a guest declines sign-in, so the overlay stops asking.
+  function isGuestMode() {
+    try { return localStorage.getItem(GUEST_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function setGuestMode(on) {
+    try {
+      if (on) localStorage.setItem(GUEST_KEY, '1');
+      else localStorage.removeItem(GUEST_KEY);
+    } catch (e) {}
   }
 
   function get() {
@@ -305,16 +318,34 @@ var SeriesAuth = (function () {
     attempt();
   }
 
-  // Playback never waits on sign-in: cb gets the stored gist credentials, or
-  // null for a guest whose progress stays in this browser.
+  // Gist sync first: a signed-in viewer goes straight through, a guest is
+  // offered sign-in and may skip it. cb(creds) gets null for a guest, whose
+  // progress stays in this browser.
   function require(cb) {
-    cb(get());
+    var creds = get();
+    if (creds) {
+      cb(creds);
+      return;
+    }
+    if (isGuestMode()) {
+      cb(null);
+      return;
+    }
+    showOverlay(function (newCreds) {
+      setGuestMode(false);
+      cb(newCreds);
+    }, function () {
+      setGuestMode(true);
+      cb(null);
+    });
   }
 
-  // Force the sign-in overlay, for the account button and any "sign in to
-  // sync" link.
+  // Ask for credentials even for a guest, for any explicit "sign in" action.
   function requireFresh(cb) {
-    showOverlay(function (newCreds) { cb(newCreds); });
+    showOverlay(function (newCreds) {
+      setGuestMode(false);
+      cb(newCreds);
+    });
   }
 
   // Sign in from the account button. The gist takes over when it already holds
@@ -326,6 +357,7 @@ var SeriesAuth = (function () {
           var local = readLocal();
           if (hasProgress(local)) writeProgress(newCreds, local);
         }
+        setGuestMode(false);
         mountAccount();
         if (typeof cb === 'function') cb(newCreds);
       });
@@ -334,6 +366,7 @@ var SeriesAuth = (function () {
 
   function signOut() {
     clear();
+    setGuestMode(true);
     window.location.reload();
   }
 
@@ -375,7 +408,7 @@ var SeriesAuth = (function () {
 
   var mountSignOut = mountAccount;
 
-  function showOverlay(afterLogin) {
+  function showOverlay(afterLogin, onSkip) {
     if (document.getElementById('seriesAuthOverlay')) return;
 
     var overlay = document.createElement('div');
@@ -393,7 +426,7 @@ var SeriesAuth = (function () {
       '    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,4 20,12 6,20" fill="#fff" stroke="none"/></svg>',
       '  </div>',
       '  <h2 style="margin:0 0 6px;font-size:26px;font-weight:900;text-align:center;color:#fff;position:relative;z-index:1">Sign in</h2>',
-      '  <p style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices. Watching works without it \u2014 progress stays in this browser.</p>',
+      '  <p style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices</p>',
       '  <input id="siUser" type="text" placeholder="GitHub username" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siGist" type="text" placeholder="Gist ID" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:16px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
@@ -401,7 +434,7 @@ var SeriesAuth = (function () {
       '  <div id="siStatus" style="min-height:18px;margin-top:12px;text-align:center;font-size:13px;color:#a5a5a5;position:relative;z-index:1"></div>',
       '  <button id="siImport" type="button" style="display:block;width:100%;margin-top:10px;padding:10px;border:none;border-radius:6px;background:transparent;color:#a5a5a5;font-size:13px;cursor:pointer;text-decoration:underline">Import credentials file (.txt)</button>',
       '  <input id="siFile" type="file" accept=".txt" style="display:none" />',
-      '  <button id="siSkip" type="button" style="display:block;width:100%;margin-top:6px;padding:10px;border:none;border-radius:6px;background:transparent;color:#8f8f8f;font-size:13px;cursor:pointer">Continue without signing in</button>',
+      '  <button id="siSkip" type="button" style="display:block;width:100%;margin-top:6px;padding:10px;border:none;border-radius:6px;background:transparent;color:#8f8f8f;font-size:13px;cursor:pointer">Continue without signing in \u2014 progress stays in this browser</button>',
       '</div>'
     ].join('');
 
@@ -484,7 +517,10 @@ var SeriesAuth = (function () {
       });
     });
     siImport.addEventListener('click', function () { siFile.click(); });
-    overlay.querySelector('#siSkip').addEventListener('click', function () { overlay.remove(); });
+    overlay.querySelector('#siSkip').addEventListener('click', function () {
+      overlay.remove();
+      if (typeof onSkip === 'function') onSkip();
+    });
     siFile.addEventListener('change', function (e) {
       if (e.target.files && e.target.files[0]) importFile(e.target.files[0]);
     });
@@ -505,6 +541,8 @@ var SeriesAuth = (function () {
     hasProgress: hasProgress,
     readLocal: readLocal,
     isSignedIn: function () { return !!get(); },
+    isGuestMode: isGuestMode,
+    setGuestMode: setGuestMode,
     setSuppressWrites: function (value) { suppressWrites = !!value; },
     require: require,
     requireFresh: requireFresh,

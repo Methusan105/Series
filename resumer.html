@@ -156,14 +156,16 @@
         if (status) status.innerHTML = text + '<span class="dots"></span>';
       }
 
-      showLoading('Loading your progress');
-      SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
-        if (progressData && progressData.url) {
-          window.location.href = progressData.url;
-        } else {
-          if (spinner) spinner.style.display = 'none';
-          if (status) status.textContent = 'No saved progress found — pick a series from the home page.';
-        }
+      SeriesAuth.require(function () {
+        showLoading('Loading your progress');
+        SeriesAuth.fetchProgress(SeriesAuth.get(), function (progressData) {
+          if (progressData && progressData.url) {
+            window.location.href = progressData.url;
+          } else {
+            if (spinner) spinner.style.display = 'none';
+            if (status) status.textContent = 'No saved progress found — pick a series from the home page.';
+          }
+        });
       });
     });
   </script>
