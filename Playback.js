@@ -236,6 +236,20 @@ var SeriesAuth = (function () {
     return urls[0];
   }
 
+  // Nothing here needs an unbounded history: a few hundred recent episodes is
+  // far more than anyone resumes, and it keeps the file small.
+  var MAX_EPISODES = 500;
+
+  function trim(store) {
+    var urls = Object.keys(store.episodes);
+    if (urls.length <= MAX_EPISODES) return store;
+    urls.sort(function (a, b) {
+      return (store.episodes[b].updatedAt || 0) - (store.episodes[a].updatedAt || 0);
+    });
+    urls.slice(MAX_EPISODES).forEach(function (url) { delete store.episodes[url]; });
+    return store;
+  }
+
   function mergeProgress(data, entry) {
     var store = normalize(data);
     var url = absolute(entry && entry.url ? entry.url : currentUrl());
@@ -248,6 +262,7 @@ var SeriesAuth = (function () {
       };
       store.last = url;
     }
+    trim(store);
     if (store.last && store.episodes[store.last]) store.progress = store.episodes[store.last].progress;
     store.url = store.last || null;
     return store;
@@ -346,13 +361,25 @@ var SeriesAuth = (function () {
         return r.json();
       })
       .then(function (data) {
-        var raw = data && data.files && data.files[GIST_FILENAME] && data.files[GIST_FILENAME].content;
-        if (typeof raw !== 'string') return null;
+        var file = data && data.files && data.files[GIST_FILENAME];
+        if (!file) return null;
+        // The gists API returns only the first 1MB of a file, flagged as
+        // truncated; the raw URL carries the whole thing.
+        if (file.truncated && file.raw_url) {
+          return fetch(file.raw_url, { cache: 'no-store' }).then(function (r) {
+            if (!r.ok) throw new Error('gist file read failed (' + r.status + ')');
+            return r.text();
+          });
+        }
+        return typeof file.content === 'string' ? file.content : '';
+      })
+      .then(function (text) {
+        if (text === null) return null;
         try {
-          return JSON.parse(raw);
+          return JSON.parse(text);
         } catch (e) {
-          // A truncated or hand-edited file must not read as "no file", or the
-          // next save would overwrite it with this browser's copy.
+          // A hand-edited file must not read as "no file", or the next save
+          // would overwrite it with this browser's copy.
           throw new Error('progress file is not valid JSON');
         }
       });
