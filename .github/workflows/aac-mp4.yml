@@ -12,6 +12,16 @@ on:
         description: "Release holding the videos (e.g. v1.2.0)"
         required: true
         type: string
+      keep_audio:
+        description: "Audio tracks to keep: all, or indexes/languages/titles (e.g. 0,jpn)"
+        required: true
+        default: "all"
+        type: string
+      drop_audio:
+        description: "Audio tracks to drop: indexes/languages/titles (e.g. 2,commentary)"
+        required: false
+        default: ""
+        type: string
       filter:
         description: "Only assets matching this regex (optional, e.g. Smallville[.]S01)"
         required: false
@@ -55,25 +65,43 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
           FILTER: ${{ inputs.filter }}
+          KEEP: ${{ inputs.keep_audio || 'all' }}
+          DROP: ${{ inputs.drop_audio || '' }}
         run: |
           set -euo pipefail
           assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
-          mapfile -t candidates < <(
+          mapfile -t videos < <(
             printf '%s\n' "$assets" \
               | grep -Ei '\.(mkv|mp4|mov|m4v|avi|webm|ts|m2ts|wmv|flv)$' \
               | grep -Eiv '\-aac\.mp4$' \
               | sort || true
           )
+          # Two assets sharing a stem (Show.mkv beside Show.mp4, which the old
+          # MKV workflow produces) would both want Show-aac.mp4 and the second
+          # upload would clobber the first, losing that variant outright. Those
+          # stems carry their source extension into the output name instead.
+          declare -A stem_uses=()
+          for name in "${videos[@]}"; do
+            stem=${name%.*}
+            stem_uses[$stem]=$(( ${stem_uses[$stem]:-0} + 1 ))
+          done
           selected=()
-          for name in "${candidates[@]}"; do
-            if printf '%s\n' "$assets" | grep -Fxq "${name%.*}-aac.mp4"; then
-              echo "skip $name: ${name%.*}-aac.mp4 already in the release"
+          for name in "${videos[@]}"; do
+            stem=${name%.*}
+            ext=${name##*.}
+            if [ "${stem_uses[$stem]}" -gt 1 ]; then
+              out="$stem.$ext-aac.mp4"
+            else
+              out="$stem-aac.mp4"
+            fi
+            if printf '%s\n' "$assets" | grep -Fxq "$out"; then
+              echo "skip $name: $out already in the release"
               continue
             fi
             if [ -n "$FILTER" ] && ! printf '%s' "$name" | grep -Eqi "$FILTER"; then
               continue
             fi
-            selected+=("$name")
+            selected+=("$name"$'\t'"$out")
           done
           echo "count=${#selected[@]}" >> "$GITHUB_OUTPUT"
           if [ "${#selected[@]}" -eq 0 ]; then
@@ -81,17 +109,17 @@ jobs:
             echo "matrix=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          printf '%s\n' "${selected[@]}"
+          printf '%s\n' "${selected[@]}" | tr '\t' '\n' | paste - -
           {
             echo "matrix<<AAC_MP4_MATRIX"
             printf '%s\n' "${selected[@]}" \
-              | jq -R -s -c 'split("\n") | map(select(length > 0)) | {asset: .}'
+              | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {asset: .[0], out: .[1]})'
             echo "AAC_MP4_MATRIX"
           } >> "$GITHUB_OUTPUT"
           {
             echo "### AAC MP4: \`$TAG\`"
             echo ""
-            echo "${#selected[@]} video(s) queued"
+            echo "${#selected[@]} video(s) queued, keep \`$KEEP\`, drop \`${DROP:-none}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   convert:
@@ -160,17 +188,17 @@ jobs:
 
       - name: Probe audio codecs and remux to AAC MP4
         env:
-          ASSET: ${{ matrix.asset }}
+          OUT: ${{ matrix.out }}
+          KEEP: ${{ inputs.keep_audio || 'all' }}
+          DROP: ${{ inputs.drop_audio || '' }}
         run: |
           set -euo pipefail
           input=$(find dl -type f -print -quit)
-          out="${ASSET%.*}-aac.mp4"
-          echo "OUT=$out" >> "$GITHUB_ENV"
-          bash .github/scripts/aac-mp4.sh "$input" "$out" | tee convert.log
-          ls -lh "$out"
-          size=$(stat -c%s "$out")
+          bash .github/scripts/aac-mp4.sh "$input" "$OUT" --keep "$KEEP" --drop "$DROP" | tee convert.log
+          ls -lh "$OUT"
+          size=$(stat -c%s "$OUT")
           if [ "$size" -ge $((2 * 1024 * 1024 * 1024)) ]; then
-            echo "::error::$out is $((size / 1024 / 1024)) MiB, over GitHub's 2 GiB release asset limit"
+            echo "::error::$OUT is $((size / 1024 / 1024)) MiB, over GitHub's 2 GiB release asset limit"
             exit 1
           fi
 
@@ -179,6 +207,7 @@ jobs:
           GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+          OUT: ${{ matrix.out }}
         run: |
           set -euo pipefail
           gh release upload "$TAG" "$OUT" --repo "$REPO" --clobber
@@ -196,9 +225,10 @@ jobs:
         if: always()
         env:
           ASSET: ${{ matrix.asset }}
+          OUT: ${{ matrix.out }}
         run: |
           {
-            echo "### \`$ASSET\`"
+            echo "### \`$ASSET\` → \`$OUT\`"
             echo ""
             if [ -f convert.log ]; then
               echo '```'

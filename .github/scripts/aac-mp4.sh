@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Remux a video into an MP4 that carries AAC audio, without re-encoding video.
 #
-#   ./aac-mp4.sh <input> <output>
+#   ./aac-mp4.sh <input> <output> [--keep <spec>] [--drop <spec>]
 #
 # Audio policy, decided per track:
 #   aac            -> stream copy, bit-for-bit
@@ -9,19 +9,40 @@
 #                     count, keeping the channels (downmixed to 5.1 only above
 #                     eight channels, which is all AAC can hold)
 #
-# Every audio track is kept in input order along with its language and default
-# flag, so a multi-audio release keeps every dub and commentary. MP4 has no
-# per-track title field, so track titles cannot come across; the list printed
-# below says which track holds what. Subtitles and font attachments are dropped:
-# MP4 cannot carry PGS or SSA, and keeping only the ones it can would silently
+# <spec> is a comma-separated list of selectors, any of which may be used:
+#   all             every track (what --keep defaults to)
+#   <number>        the track at that index, as numbered in the report below
+#   <language>      tracks tagged with that ISO code (und = untagged)
+#   default         tracks the source marks as default
+#   <text>          tracks whose title contains that text, e.g. commentary
+# --keep narrows the output to the union of its selectors; --drop then removes
+# the union of its selectors from whatever is left. Surviving tracks keep their
+# input order, language tag and default flag, so one dub stays the default.
+#
+# MP4 has no per-track title field, so track titles cannot come across; the
+# report says which track held what. Subtitles and font attachments are dropped:
+# MP4 cannot carry PGS or SSA, and keeping only the ones it could would silently
 # lose the rest.
 set -euo pipefail
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-[ "$#" -eq 2 ] || die "usage: $0 <input> <output>"
+[ "$#" -ge 2 ] || die "usage: $0 <input> <output> [--keep <spec>] [--drop <spec>]"
 in=$1
 out=$2
+shift 2
+
+keep=all
+drop=
+while [ "$#" -gt 0 ]; do
+  case $1 in
+    --keep) keep=${2:-} && shift 2 ;;
+    --drop) drop=${2:-} && shift 2 ;;
+    *) die "unknown option: $1" ;;
+  esac
+done
+[ -n "$keep" ] || keep=all
+
 [ -f "$in" ] || die "no such file: $in"
 
 probe=$(ffprobe -v error -show_streams -of json -- "$in")
@@ -40,9 +61,32 @@ audio=$(jq -r '[.streams[] | select(.codec_type == "audio")] | to_entries[] |
    (.value.tags.title // "-"), ((.value.disposition.default // 0) | tostring)] | @tsv' <<<"$probe")
 [ -n "$audio" ] || die "$in has no audio stream, so there is nothing to convert"
 
+matches() {
+  local token=${1,,} index=$2 language=${3,,} title=${4,,} is_default=$5
+  case $token in
+    all) return 0 ;;
+    default) [ "$is_default" = 1 ] && return 0 || return 1 ;;
+  esac
+  if [[ $token =~ ^[0-9]+$ ]]; then
+    [ "$token" = "$index" ] && return 0 || return 1
+  fi
+  [ "$token" = "$language" ] && return 0
+  [[ $title == *"$token"* ]]
+}
+
+selected_by() {
+  local spec=$1 token
+  local IFS=,
+  for token in $spec; do
+    [ -n "$token" ] || continue
+    matches "$token" "$2" "$3" "$4" "$5" && return 0
+  done
+  return 1
+}
+
 printf 'video: %s (copied)\n' "$video_codec"
 
-args=(-nostdin -hide_banner -loglevel warning -y -i "$in" -map 0:V:0 -c:v copy)
+declare -a args=(-nostdin -hide_banner -loglevel warning -y -i "$in" -map 0:V:0 -c:v copy)
 if [ "$video_codec" = hevc ]; then
   # Matroska tags HEVC as hev1, which QuickTime and Safari refuse in MP4.
   args+=(-tag:v hvc1)
@@ -50,14 +94,32 @@ fi
 
 declare -a per_stream=()
 tracks=0
+kept=0
 claimed_default=0
-while IFS=$'\t' read -r index codec channels language title is_default; do
-  args+=(-map "0:a:$index")
+mapfile -t rows <<<"$audio"
+for row in "${rows[@]}"; do
+  IFS=$'\t' read -r index codec channels language title is_default <<<"$row"
   if [ "$title" = - ]; then
     label=${language/#-/und}
   else
     label=$title
   fi
+  if [ "$language" = - ]; then
+    language=und
+  fi
+
+  if ! selected_by "$keep" "$index" "$language" "$title" "$is_default"; then
+    printf 'audio %d: %-9s %-4s %-4s %-24s dropped (keep=%s did not match)\n' \
+      "$index" "$codec" "${channels}ch" "$language" "[$label]" "$keep"
+    continue
+  fi
+  if [ -n "$drop" ] && selected_by "$drop" "$index" "$language" "$title" "$is_default"; then
+    printf 'audio %d: %-9s %-4s %-4s %-24s dropped (drop=%s matched)\n' \
+      "$index" "$codec" "${channels}ch" "$language" "[$label]" "$drop"
+    continue
+  fi
+
+  args+=(-map "0:a:$index")
   if [ "$codec" = aac ]; then
     per_stream+=(-c:a:"$tracks" copy)
     conversion="copy"
@@ -83,9 +145,13 @@ while IFS=$'\t' read -r index codec channels language title is_default; do
   else
     per_stream+=(-disposition:a:"$tracks" 0)
   fi
-  printf 'audio %d: %-5s %-4s %-9s %-24s %s\n' "$tracks" "$codec" "${channels}ch" "$language" "[$label]" "$conversion"
+  printf 'audio %d: %-9s %-4s %-4s %-24s %s -> out %d\n' \
+    "$index" "$codec" "${channels}ch" "$language" "[$label]" "$conversion" "$tracks"
   tracks=$((tracks + 1))
-done <<<"$audio"
+  kept=$((kept + 1))
+done
+
+[ "$kept" -gt 0 ] || die "keep=$keep drop=${drop:-none} leaves no audio track in $in"
 
 ffmpeg "${args[@]}" "${per_stream[@]}" \
   -map_metadata 0 -map_chapters 0 -movflags +faststart "$out"
@@ -101,4 +167,4 @@ out_tracks=$(jq -r '[.streams[] | select(.codec_type == "audio")] | length' <<<"
 [ "$out_tracks" = "$tracks" ] || die "output has $out_tracks audio tracks, expected $tracks"
 [ "$non_aac" = 0 ] || die "output still carries non-AAC audio: $out_audio"
 
-printf 'ok: %s -> %s (%s video, %d audio: %s)\n' "$in" "$out" "$out_codec" "$out_tracks" "$out_audio"
+printf 'ok: %s -> %s (%s video, %d audio: %s)\n' "$in" "$out" "$out_codec" "$tracks" "$out_audio"
