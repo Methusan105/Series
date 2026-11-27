@@ -57,6 +57,7 @@ body::before{
   transition:transform 0.2s ease,box-shadow 0.2s ease,border-color 0.2s ease;
   position:relative;overflow:hidden;overflow-wrap:anywhere;word-wrap:break-word;text-align:center;padding:0 12px;
 }
+.season-card:focus-visible,.resume-btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
 .season-card:hover{
   transform:translateY(-4px);
   border-color:var(--glass-border-hover);
