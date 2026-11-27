@@ -14,7 +14,20 @@
   var saveInterval = 120000;
 
   document.addEventListener('DOMContentLoaded', function () {
+    // A keypress belongs to the player only when the player has the page to
+    // itself: not while a field is focused, and not while the sign-in dialog is
+    // open over it.
+    function playerOwnsKey(event) {
+      var el = event.target;
+      if (el && el.nodeType === 1) {
+        var tag = el.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return false;
+      }
+      return !document.getElementById('seriesAuthOverlay');
+    }
+
     document.addEventListener("keydown", function (event) {
+      if (!playerOwnsKey(event)) return;
       if (event.key === " ") { event.preventDefault(); togglePause(); }
       if (event.key === "f") { fullscr(); }
       if (event.key === "ArrowLeft") { seekBackward(); }
@@ -182,7 +195,42 @@
       } else {
         recovering = false;
         console.error('Video source is dead after ' + recoveryMax + ' attempts; progress saved at ' + Math.round(savedPos) + 's.');
+        showSourceError(savedPos);
       }
+    }
+
+    // Three silent retries leave a black frame, which reads as a broken page.
+    function showSourceError(savedPos) {
+      if (document.getElementById('sourceError')) return;
+      var box = document.createElement('div');
+      box.id = 'sourceError';
+      box.className = 'source-error';
+      box.setAttribute('role', 'alert');
+      box.innerHTML = [
+        '<strong>This episode won\u2019t play right now.</strong>',
+        '<span>Your position is saved at ' + formatClock(savedPos) + '. Try again in a moment.</span>'
+      ].join('');
+      var retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Try again';
+      retry.className = 'source-error-retry';
+      retry.addEventListener('click', function () {
+        box.remove();
+        recoveryAttempts = 0;
+        refreshAndRestore(savedPos);
+      });
+      box.appendChild(retry);
+      var container = document.querySelector('.video-container') || document.body;
+      container.appendChild(box);
+    }
+
+    function formatClock(seconds) {
+      var total = Math.max(0, Math.round(seconds || 0));
+      var h = Math.floor(total / 3600);
+      var m = Math.floor((total % 3600) / 60);
+      var s = total % 60;
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
     }
   });
 
