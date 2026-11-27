@@ -236,18 +236,46 @@ var SeriesAuth = (function () {
     return urls[0];
   }
 
-  // Nothing here needs an unbounded history: a few hundred recent episodes is
-  // far more than anyone resumes, and it keeps the file small.
-  var MAX_EPISODES = 500;
+  // How many episodes keep a position: chosen on the home page, 500 by default.
+  // Bounded because the file is a gist, and because nobody resumes their way
+  // back through five hundred episodes.
+  var LIMIT_KEY = 'seriesProgressLimit';
+  var LIMIT_CHOICES = [10, 25, 50, 100, 200, 500];
+  var DEFAULT_LIMIT = 500;
+
+  function progressLimit() {
+    try {
+      var value = parseInt(localStorage.getItem(LIMIT_KEY), 10);
+      return value > 0 ? value : DEFAULT_LIMIT;
+    } catch (e) {
+      return DEFAULT_LIMIT;
+    }
+  }
 
   function trim(store) {
+    var limit = progressLimit();
     var urls = Object.keys(store.episodes);
-    if (urls.length <= MAX_EPISODES) return store;
+    if (urls.length <= limit) return store;
     urls.sort(function (a, b) {
       return (store.episodes[b].updatedAt || 0) - (store.episodes[a].updatedAt || 0);
     });
-    urls.slice(MAX_EPISODES).forEach(function (url) { delete store.episodes[url]; });
+    urls.slice(limit).forEach(function (url) { delete store.episodes[url]; });
+    if (store.last && !store.episodes[store.last]) store.last = recentUrl(store);
     return store;
+  }
+
+  // Change the limit now: trim what is stored and push the result up.
+  function setProgressLimit(value) {
+    var limit = parseInt(value, 10);
+    if (!(limit > 0)) return;
+    try { localStorage.setItem(LIMIT_KEY, String(limit)); } catch (e) {}
+    var creds = get();
+    var store = trim(normalize(readLocal()));
+    writeLocal(store);
+    if (!canSync(creds)) return;
+    writeQueue = writeQueue.catch(function () { return null; }).then(function () {
+      return patchProgress(creds, store);
+    }).catch(function (e) { console.error('Limit not synced:', e && e.message); });
   }
 
   function mergeProgress(data, entry) {
@@ -842,6 +870,9 @@ var SeriesAuth = (function () {
     readProgressFile: readProgressFile,
     hasProgress: hasProgress,
     readLocal: readLocal,
+    progressLimit: progressLimit,
+    limitChoices: LIMIT_CHOICES,
+    setProgressLimit: setProgressLimit,
     isSignedIn: function () { return !!get(); },
     isGuestMode: isGuestMode,
     setGuestMode: setGuestMode,

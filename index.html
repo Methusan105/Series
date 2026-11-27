@@ -31,6 +31,18 @@
           <input id="seriesFilter" type="search" placeholder="Filter series" aria-label="Filter series by name" autocomplete="off" />
           <p id="filterEmpty" class="filter-empty" hidden>No series match that.</p>
         </div>
+        <section id="progressPanel" class="progress-panel" aria-labelledby="progressTitle">
+          <h2 id="progressTitle">Saved progress</h2>
+          <p>
+            <span id="savedCount">0</span> episodes saved
+            <span class="dot">&middot;</span>
+            keep the last
+            <select id="progressLimit" aria-label="How many episodes to remember"></select>
+            episodes
+            <span class="dot">&middot;</span>
+            <button id="clearAll" type="button" class="progress-clear">Clear all</button>
+          </p>
+        </section>
         <main class="seasons">
           <a class="season-card" onclick="clearGistProgress()" href="/Series/Akame%20Ga%20Kill/Akame.html"><span>Akame ga Kill</span></a>
           <a class="season-card" onclick="clearGistProgress()" href="/Series/Arcane/Arcane.html"><span>Arcane</span></a>
@@ -83,7 +95,11 @@
       if (!section || !row) return;
 
       SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
-        if (!items || !items.length) return;
+        if (!items || !items.length) {
+          row.textContent = '';
+          section.hidden = true;
+          return;
+        }
 
         row.textContent = '';
         items.slice(0, 6).forEach(function (item) {
@@ -160,9 +176,54 @@
       });
     }
 
+    // The limit is a setting, so it lives next to the count it governs.
+    function setupProgressPanel() {
+      var select = document.getElementById('progressLimit');
+      var count = document.getElementById('savedCount');
+      var clear = document.getElementById('clearAll');
+      if (!select || !count) return;
+
+      (SeriesAuth.limitChoices || []).forEach(function (value) {
+        var option = document.createElement('option');
+        option.value = String(value);
+        option.textContent = value + ' episodes';
+        select.appendChild(option);
+      });
+
+      function render() {
+        select.value = String(SeriesAuth.progressLimit());
+        SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
+          count.textContent = String((items || []).length);
+        });
+      }
+
+      select.addEventListener('change', function () {
+        SeriesAuth.setProgressLimit(select.value);
+        render();
+        document.getElementById('continueWatching').hidden = true;
+        continueWatching();
+      });
+
+      if (clear) {
+        clear.addEventListener('click', function () {
+          clearGistProgress(function (ok) {
+            if (!ok) {
+              clear.textContent = 'Could not clear';
+              return;
+            }
+            render();
+            continueWatching();
+          });
+        });
+      }
+
+      render();
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
       var resumeBtn = document.getElementById('resumeBtn');
       setupFilter();
+      setupProgressPanel();
       continueWatching();
       if (resumeBtn) {
         resumeBtn.addEventListener('click', function () {
