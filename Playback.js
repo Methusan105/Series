@@ -520,6 +520,58 @@ var SeriesAuth = (function () {
     return !!(at && at.progress > 0);
   }
 
+  // One pill, shown when a gist write does not land. Silent failures are worse
+  // than no sync at all: the position looks saved and is silently local-only.
+  var syncBadge = null;
+  var syncListeners = [];
+
+  function syncNotice(text) {
+    if (!document.body) return;
+    if (!syncBadge) {
+      syncBadge = document.createElement('div');
+      syncBadge.id = 'seriesSyncBadge';
+      syncBadge.setAttribute('role', 'status');
+      syncBadge.setAttribute('aria-live', 'polite');
+      syncBadge.style.cssText = [
+        'position:fixed', 'left:50%', 'bottom:20px', 'transform:translateX(-50%)',
+        'z-index:99998', 'max-width:min(440px,92vw)', 'box-sizing:border-box',
+        'display:flex', 'align-items:center', 'gap:12px',
+        'padding:12px 14px', 'border-radius:12px',
+        'background:rgba(20,20,20,0.96)', 'border:1px solid rgba(229,9,20,0.55)',
+        'box-shadow:0 10px 30px rgba(0,0,0,0.5)', 'color:#e5e5e5',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',
+        'font-size:13px', 'line-height:1.4'
+      ].join(';');
+      var label = document.createElement('span');
+      label.id = 'seriesSyncText';
+      syncBadge.appendChild(label);
+      var close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = '\u00d7';
+      close.setAttribute('aria-label', 'Dismiss');
+      close.style.cssText = 'flex:0 0 auto;width:26px;height:26px;padding:0;border-radius:50%;background:transparent;border:1px solid rgba(255,255,255,0.25);color:#e5e5e5;font-size:15px;line-height:1;cursor:pointer';
+      close.addEventListener('click', hideSyncNotice);
+      syncBadge.appendChild(close);
+      document.body.appendChild(syncBadge);
+    }
+    syncBadge.querySelector('#seriesSyncText').textContent = text;
+    syncBadge.style.display = 'flex';
+  }
+
+  function hideSyncNotice() {
+    if (syncBadge) syncBadge.style.display = 'none';
+  }
+
+  function reportSyncFailure() {
+    syncNotice('Saved in this browser only \u2014 GitHub could not be reached. It will sync on the next save.');
+    syncListeners.forEach(function (fn) { try { fn(false); } catch (e) {} });
+  }
+
+  function reportSyncOk() {
+    hideSyncNotice();
+    syncListeners.forEach(function (fn) { try { fn(true); } catch (e) {} });
+  }
+
   function patchProgress(creds, store) {
     var gistData = { files: {} };
     gistData.files[GIST_FILENAME] = { content: JSON.stringify(store, null, 2) };
@@ -549,17 +601,21 @@ var SeriesAuth = (function () {
         var source = remote || readLocal();
         var file = buildFile(source, build(source).episodes);
         writeLocal(file);
-        return patchProgress(creds, file);
-      }, function (e) {
+        return patchProgress(creds, file).then(function (d) {
+          reportSyncOk();
+          return d;
+        });      }, function (e) {
         // Unreadable remote: leave it alone rather than overwrite it with this
         // browser's copy. The local one is already saved.
         console.warn('Progress not synced:', e && e.message);
+        reportSyncFailure();
         return null;
       });
     });
     // Autosave failures stay out of the way of the next write.
     writeQueue = writeQueue.catch(function (e) {
       console.error('Save error:', e && e.message);
+      reportSyncFailure();
       return null;
     });
     return writeQueue;
@@ -569,6 +625,21 @@ var SeriesAuth = (function () {
     if (suppressWrites) return writeQueue;
     return commit(creds, function (base) {
       return mergeProgress(base, progressData);
+    });
+  }
+
+  // Forget everything saved for one show, leaving the others alone.
+  function removeSeries(creds, url) {
+    var key = seriesKey(url);
+    return commit(creds, function (base) {
+      var store = normalize(base);
+      Object.keys(store.episodes).forEach(function (episode) {
+        if (seriesKey(episode) === key) delete store.episodes[episode];
+      });
+      if (store.last && !store.episodes[store.last]) store.last = recentUrl(store);
+      store.progress = store.last ? store.episodes[store.last].progress : 0;
+      store.url = store.last || null;
+      return store;
     });
   }
 
@@ -590,9 +661,12 @@ var SeriesAuth = (function () {
         var source = remote || readLocal();
         var file = buildFile(source, forget(source).episodes);
         writeLocal(file);
-        return patchProgress(creds, file);
-      });
+        return patchProgress(creds, file).then(function (d) {
+          reportSyncOk();
+          return d;
+        });      });
     });
+    done.catch(reportSyncFailure);
     writeQueue = done.catch(function (e) {
       console.error('Clear error:', e && e.message);
       return null;
@@ -951,6 +1025,7 @@ var SeriesAuth = (function () {
     verify: verify,
     fetchProgress: fetchProgress,
     fetchLibrary: fetchLibrary,
+    removeSeries: removeSeries,
     writeProgress: writeProgress,
     clearProgress: clearProgress,
     clearProgressWithVerification: clearProgressWithVerification,
@@ -962,6 +1037,9 @@ var SeriesAuth = (function () {
     limitChoices: LIMIT_CHOICES,
     setProgressLimit: setProgressLimit,
     isSignedIn: function () { return !!get(); },
+    onSyncChange: function (fn) {
+      if (typeof fn === 'function') syncListeners.push(fn);
+    },
     isGuestMode: isGuestMode,
     setGuestMode: setGuestMode,
     setSuppressWrites: function (value) { suppressWrites = !!value; },
