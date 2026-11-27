@@ -89,6 +89,13 @@
   <script src="assets/js/main.js"></script>
   <script>
     // The home page lists every episode with a saved position, newest first.
+    var panelRender = null;
+
+    function refreshProgressViews() {
+      if (panelRender) panelRender();
+      continueWatching();
+    }
+
     var posters = {};
 
     function loadPosters(cb) {
@@ -127,11 +134,27 @@
 
         row.textContent = '';
         perShow.slice(0, 6).forEach(function (item) {
-          var card = document.createElement('a');
+          var card = document.createElement('div');
           card.className = 'continue-card';
-          card.href = item.url;
 
-          card.appendChild(artFor(item.url));
+          var link = document.createElement('a');
+          link.className = 'continue-link';
+          link.href = item.url;
+          card.appendChild(link);
+
+          var remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'continue-remove';
+          remove.setAttribute('aria-label', 'Remove ' + seriesNameFor(item.url) + ' from Continue watching');
+          remove.textContent = '\u00d7';
+          remove.addEventListener('click', function (event) {
+            event.preventDefault();
+            card.classList.add('is-removing');
+            SeriesAuth.removeSeries(SeriesAuth.get(), item.url).then(refreshProgressViews);
+          });
+          card.appendChild(remove);
+
+          link.appendChild(artFor(item.url));
 
           var body = document.createElement('span');
           body.className = 'continue-body';
@@ -155,7 +178,7 @@
             body.appendChild(bar);
           }
 
-          card.appendChild(body);
+          link.appendChild(body);
           row.appendChild(card);
         });
 
@@ -280,6 +303,8 @@
         select.appendChild(option);
       });
 
+      panelRender = render;
+
       function render() {
         select.value = String(SeriesAuth.progressLimit());
         SeriesAuth.fetchLibrary(SeriesAuth.get(), function (items) {
@@ -294,9 +319,7 @@
 
       select.addEventListener('change', function () {
         SeriesAuth.setProgressLimit(select.value);
-        render();
-        document.getElementById('continueWatching').hidden = true;
-        continueWatching();
+        refreshProgressViews();
       });
 
       if (clear) {
@@ -306,8 +329,7 @@
               clear.textContent = 'Could not clear';
               return;
             }
-            render();
-            continueWatching();
+            refreshProgressViews();
           });
         });
       }

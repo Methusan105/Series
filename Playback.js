@@ -508,6 +508,21 @@ var SeriesAuth = (function () {
     });
   }
 
+  // Forget everything saved for one show, leaving the others alone.
+  function removeSeries(creds, url) {
+    var key = seriesKey(url);
+    return commit(creds, function (base) {
+      var store = normalize(base);
+      Object.keys(store.episodes).forEach(function (episode) {
+        if (seriesKey(episode) === key) delete store.episodes[episode];
+      });
+      if (store.last && !store.episodes[store.last]) store.last = recentUrl(store);
+      store.progress = store.last ? store.episodes[store.last].progress : 0;
+      store.url = store.last || null;
+      return store;
+    });
+  }
+
   // On a player page this forgets that one episode; anywhere else (the home
   // page's series cards) it clears the whole file, as it always did.
   function clearProgress(creds) {
@@ -885,6 +900,7 @@ var SeriesAuth = (function () {
     verify: verify,
     fetchProgress: fetchProgress,
     fetchLibrary: fetchLibrary,
+    removeSeries: removeSeries,
     writeProgress: writeProgress,
     clearProgress: clearProgress,
     clearProgressWithVerification: clearProgressWithVerification,
