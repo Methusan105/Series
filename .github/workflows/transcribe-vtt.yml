@@ -97,9 +97,12 @@ jobs:
             exit 1
           fi
           printf '%s\n' "${selected[@]}"
-          printf '%s\n' "${selected[@]}" \
-            | jq -R -s 'split("\n") | map(select(length > 0)) | {asset: .}' > matrix.json
-          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
+          {
+            echo "matrix<<SUBSYNC_MATRIX"
+            printf '%s\n' "${selected[@]}" \
+              | jq -R -s -c 'split("\n") | map(select(length > 0)) | {asset: .}'
+            echo "SUBSYNC_MATRIX"
+          } >> "$GITHUB_OUTPUT"
           {
             echo "### Subtitle sync: \`$TAG\`"
             echo ""
