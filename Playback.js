@@ -659,8 +659,13 @@ var SeriesAuth = (function () {
     if (document.getElementById('seriesAuthOverlay')) return;
     ensureOverlayStyles();
 
+    var opener = document.activeElement;
+
     var overlay = document.createElement('div');
     overlay.id = 'seriesAuthOverlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'siTitle');
     overlay.style.cssText = [
       'position:fixed', 'inset:0', 'z-index:99999',
       'background:rgba(0,0,0,0.88)', 'backdrop-filter:blur(12px)', '-webkit-backdrop-filter:blur(12px)',
@@ -673,13 +678,13 @@ var SeriesAuth = (function () {
       '  <div style="width:64px;height:64px;margin:0 auto 18px;border-radius:16px;background:linear-gradient(135deg,#e50914,rgba(229,9,20,0.55));display:flex;align-items:center;justify-content:center;box-shadow:0 0 30px rgba(229,9,20,0.4);position:relative;z-index:1">',
       '    <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6,4 20,12 6,20" fill="#fff" stroke="none"/></svg>',
       '  </div>',
-      '  <h2 style="margin:0 0 6px;font-size:26px;font-weight:900;text-align:center;color:#fff;position:relative;z-index:1">Sign in</h2>',
+      '  <h2 id="siTitle" style="margin:0 0 6px;font-size:26px;font-weight:900;text-align:center;color:#fff;position:relative;z-index:1">Sign in</h2>',
       '  <p id="siSub" style="margin:0 0 26px;text-align:center;color:#a5a5a5;font-size:14px;position:relative;z-index:1">Sync your watch progress across devices</p>',
       '  <input id="siUser" type="text" placeholder="GitHub username" autocomplete="username" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siGist" type="text" placeholder="Gist ID" style="width:100%;box-sizing:border-box;margin-bottom:10px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <input id="siToken" type="password" placeholder="Personal access token" autocomplete="current-password" style="width:100%;box-sizing:border-box;margin-bottom:16px;padding:12px 14px;background:#0a0a0a;border:1px solid #333;border-radius:6px;color:#e5e5e5;font-size:15px;outline:none" />',
       '  <button id="siSubmit" type="button" style="width:100%;padding:12px;border:none;border-radius:6px;background:#e50914;color:#fff;font-weight:700;font-size:15px;cursor:pointer;position:relative;z-index:1">Sign In</button>',
-      '  <div id="siStatus" style="min-height:18px;margin-top:12px;text-align:center;font-size:13px;color:#a5a5a5;position:relative;z-index:1"></div>',
+      '  <div id="siStatus" role="status" aria-live="polite" style="min-height:18px;margin-top:12px;text-align:center;font-size:13px;color:#a5a5a5;position:relative;z-index:1"></div>',
       '  <button id="siSkip" type="button" style="display:block;width:100%;margin-top:4px;padding:12px;border:1px solid rgba(255,255,255,0.32);border-radius:6px;background:rgba(255,255,255,0.07);color:#e5e5e5;font-size:14px;font-weight:600;cursor:pointer;position:relative;z-index:1">Continue as guest</button>',
       '  <p style="margin:8px 0 16px;text-align:center;color:#8f8f8f;font-size:12px;position:relative;z-index:1">No account needed \u00b7 progress stays in this browser</p>',
       '  <button id="siImport" type="button" style="display:block;width:100%;padding:10px;border:none;border-top:1px solid rgba(255,255,255,0.1);border-radius:6px;background:transparent;color:#a5a5a5;font-size:13px;cursor:pointer;text-decoration:underline">Import credentials file (.txt)</button>',
@@ -703,6 +708,54 @@ var SeriesAuth = (function () {
     siGist.value = saved.gistId || sessionStorage.getItem(LEGACY_KEYS.gistId) || '';
     siToken.value = saved.token || sessionStorage.getItem(LEGACY_KEYS.token) || '';
 
+    // Escape dismisses; on a forced prompt that is the same choice as the
+    // guest button, on an explicit sign-in it simply closes. Tab is kept
+    // inside the card while it is open.
+    function focusables() {
+      return Array.prototype.filter.call(
+        overlay.querySelectorAll('button, input, [href], select, textarea, [tabindex]:not([tabindex="-1"])'),
+        function (el) { return el.offsetParent !== null && !el.disabled; }
+      );
+    }
+
+    function onKeydown(event) {
+      if (event.key === 'Escape' || event.key === 'Esc') {
+        event.preventDefault();
+        close(typeof onSkip === 'function');
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      var items = focusables();
+      if (!items.length) return;
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (!overlay.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    function teardown() {
+      document.removeEventListener('keydown', onKeydown, true);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      if (opener && typeof opener.focus === 'function') {
+        try { opener.focus(); } catch (e) {}
+      }
+    }
+
+    function close(choseSkip) {
+      teardown();
+      if (choseSkip && typeof onSkip === 'function') onSkip();
+    }
+
+    document.addEventListener('keydown', onKeydown, true);
+
     function setStatus(text, color) {
       siStatus.textContent = text;
       siStatus.style.color = color || '#a5a5a5';
@@ -710,7 +763,7 @@ var SeriesAuth = (function () {
 
     function finish(creds) {
       save(creds);
-      overlay.remove();
+      teardown();
       mountSignOut();
       afterLogin(creds);
     }
@@ -767,8 +820,7 @@ var SeriesAuth = (function () {
     });
     siImport.addEventListener('click', function () { siFile.click(); });
     overlay.querySelector('#siSkip').addEventListener('click', function () {
-      overlay.remove();
-      if (typeof onSkip === 'function') onSkip();
+      close(true);
     });
     siFile.addEventListener('change', function (e) {
       if (e.target.files && e.target.files[0]) importFile(e.target.files[0]);
