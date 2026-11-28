@@ -308,7 +308,7 @@ var SeriesAuth = (function () {
   // Bounded because the file is a gist, and because nobody resumes their way
   // back through five hundred episodes.
   var LIMIT_KEY = 'seriesProgressLimit';
-  var LIMIT_CHOICES = [10, 25, 50, 100, 200, 500];
+  var LIMIT_CHOICES = [1, 3, 10, 25, 50, 100, 200, 500];
   var DEFAULT_LIMIT = 500;
 
   function progressLimit() {
@@ -358,13 +358,9 @@ var SeriesAuth = (function () {
     var limit = parseInt(value, 10);
     if (!(limit > 0)) return;
     try { localStorage.setItem(LIMIT_KEY, String(limit)); } catch (e) {}
-    var creds = get();
-    var store = trim(normalize(readLocal()));
-    writeLocal(store);
-    if (!canSync(creds)) return;
-    writeQueue = writeQueue.catch(function () { return null; }).then(function () {
-      return patchProgress(creds, store);
-    }).catch(function (e) { console.error('Limit not synced:', e && e.message); });
+    // Go through commit so the trim is written as the two-section file and the
+    // other site's half survives.
+    commit(get(), function (base) { return trim(normalize(base)); });
   }
 
   function mergeProgress(data, entry) {
