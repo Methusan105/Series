@@ -274,6 +274,7 @@ body::before{
   background:var(--card);border:1px solid var(--glass-border);
   display:flex;flex-direction:column;gap:6px;max-width:520px;
 }
+.saved-list[hidden]{display:none;}
 .saved-list li{display:flex;justify-content:space-between;gap:12px;font-size:0.88rem;color:var(--text);}
 .saved-list .saved-where{color:var(--muted);}
 .saved-list .saved-empty{color:var(--muted);}
