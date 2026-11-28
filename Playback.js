@@ -397,22 +397,36 @@ var SeriesAuth = (function () {
     return store;
   }
 
+  // Where the last read came from: 'gist' when GitHub answered, 'local' when
+  // we fell back to this browser. Pages show it so a stale count is visible.
+  var lastReadSource = 'local';
+
+  function progressSource() {
+    return lastReadSource;
+  }
+
   // Read the whole file: gist when signed in, this browser otherwise.
   function readProgress(creds, cb) {
     var local = readLocal();
     if (!canSync(creds)) {
+      lastReadSource = 'local';
       cb(local);
       return;
     }
     var headers = authHeaders(creds);
     headers['Accept'] = 'application/vnd.github+json';
     fetch(gistUrl(creds) + '?t=' + Date.now(), { headers: headers })
-      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (r) {
+        // A rejected read must reach the catch below, not look like an empty gist.
+        if (!r.ok) throw new Error('gist read failed (' + r.status + ')');
+        return r.json();
+      })
       .then(function (data) {
         var parsed = null;
         if (data && data.files && data.files[GIST_FILENAME]) {
           try { parsed = JSON.parse(data.files[GIST_FILENAME].content); } catch (e) { parsed = null; }
         }
+        lastReadSource = 'gist';
         if (parsed && typeof parsed === 'object') {
           writeLocal(parsed);
           cb(parsed);
@@ -420,7 +434,13 @@ var SeriesAuth = (function () {
           cb(local);
         }
       })
-      .catch(function () { cb(local); });
+      .catch(function () {
+        // Signed in but GitHub could not be read: say so rather than quietly
+        // showing this browser's copy as if it were the account's.
+        lastReadSource = 'local';
+        reportSyncFailure();
+        cb(local);
+      });
   }
 
   // What a page needs: its own position on an episode page, otherwise the
@@ -1140,6 +1160,7 @@ var SeriesAuth = (function () {
     readLocal: readLocal,
     seriesKey: seriesKey,
     savedCount: savedCount,
+    progressSource: progressSource,
     isSaved: isSaved,
     hasSavedUnder: hasSavedUnder,
     askKeepOrClear: askKeepOrClear,

@@ -35,6 +35,7 @@
           <h2 id="progressTitle">Saved progress</h2>
           <p>
             <span id="savedCount">0</span> episodes across <span id="showCount">0</span> shows
+            <span id="progressSource" class="progress-source"></span>
             <span class="dot">&middot;</span>
             keep the last
             <select id="progressLimit" aria-label="How many episodes to remember per show"></select>
@@ -349,6 +350,16 @@
           });
           count.textContent = String(items.length);
           document.getElementById('showCount').textContent = String(Object.keys(shows).length);
+
+          // Say whether that number is the account's or just this browser's.
+          var source = document.getElementById('progressSource');
+          if (source) {
+            var fromGist = SeriesAuth.progressSource() === 'gist';
+            source.textContent = fromGist ? '\u00b7 from GitHub' : '\u00b7 saved in this browser';
+            source.title = fromGist
+              ? 'These positions were read from your gist'
+              : 'GitHub was not read, so this is this browser\u2019s copy only';
+          }
         });
       }
 

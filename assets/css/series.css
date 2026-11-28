@@ -258,3 +258,6 @@ body::before{
 @media (max-width:640px) and (pointer:coarse) and (hover:none){
   .season-card.has-poster{font-size:0.9rem;padding:10px;border-radius:12px;}
 }
+
+/* Where the saved-progress numbers came from */
+.progress-source{color:var(--muted);opacity:0.8;font-size:0.86rem;}
