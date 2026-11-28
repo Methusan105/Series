@@ -143,6 +143,20 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  probe-outputs:
+    name: Show plan outputs
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo the plan outputs
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+          COUNT: ${{ needs.plan.outputs.count }}
+        run: |
+          echo "count=[$COUNT]"
+          echo "matrix=[$MATRIX]"
+          echo "length=${#MATRIX}"
+
   convert:
     name: ${{ matrix.asset }}
     needs: plan
