@@ -83,9 +83,12 @@ jobs:
           set -euo pipefail
           assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
           mapfile -t videos < <(
+            # MKV is the only source: a release that already holds both the
+            # MKV and its MP4 would otherwise queue two jobs claiming the same
+            # target name, and the workflow would disambiguate them with
+            # "-aac.mp4" suffixes.
             printf '%s\n' "$assets" \
-              | grep -Ei '\.(mkv|mp4|mov|m4v|avi|webm|ts|m2ts|wmv|flv)$' \
-              | grep -Eiv '\-aac\.mp4$' \
+              | grep -Ei '\.mkv$' \
               | sort || true
           )
           # The deliverable for an episode is <stem>.mp4, so Supernatural.S04E01.mkv
