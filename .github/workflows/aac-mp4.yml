@@ -135,6 +135,8 @@ jobs:
             echo "AAC_MP4_MATRIX"
           } >> "$GITHUB_OUTPUT"
           {
+            echo "MATRIX-CONTENT: $(cat "$GITHUB_OUTPUT" | tr '\n' '~' | tail -c 600)"
+            echo ""
             echo "### AAC MP4: \`$TAG\`"
             echo ""
             if [ "$PROBE" = true ]; then
