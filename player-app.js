@@ -36,7 +36,27 @@
       if (event.key === "c" || event.key === "C") { toggleCaptions(); }
       if (event.key === "ArrowUp") { volumeUp(); }
       if (event.key === "ArrowDown") { volumeDown(); }
+      if (event.key === "n" || event.key === "N") { stepEpisode(1); }
+      if (event.key === "p" || event.key === "P") { stepEpisode(-1); }
     });
+    // n and p walk the season this page belongs to. The page carries a link for
+    // the next episode, so follow it and keep its own clear-progress behaviour;
+    // the previous one is derived, because the markup has no link for it.
+    function stepEpisode(delta) {
+      var match = /^(.*\/)(\d+)\.html$/.exec(window.location.pathname);
+      if (!match) return;
+      if (delta > 0) {
+        var next = document.querySelector('a.next-episode');
+        // On a season's last episode that link leaves for the show's menu, so a
+        // forward step stops instead of wandering out of the season.
+        if (!next || !/\/\d+\.html$/.test(next.getAttribute('href') || '')) return;
+        next.click();
+        return;
+      }
+      var previous = parseInt(match[2], 10) - 1;
+      if (previous < 1) return;
+      window.location.href = match[1] + previous + '.html';
+    }
     function togglePause() { if (player.paused()) player.play(); else player.pause(); }
     function fullscr() { if (player.isFullscreen()) player.exitFullscreen(); else player.requestFullscreen(); }
     function seekForward() { player.currentTime(player.currentTime() + 5); }
