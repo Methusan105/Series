@@ -43,6 +43,8 @@
             <span class="dot">&middot;</span>
             <button id="clearAll" type="button" class="progress-clear">Clear all</button>
           </p>
+          <button id="savedToggle" type="button" class="progress-toggle" aria-expanded="false" aria-controls="savedList">Show what's saved</button>
+          <ul id="savedList" class="saved-list" hidden></ul>
         </section>
         <main class="seasons">
           <a class="season-card" href="/Series/Akame%20Ga%20Kill/Akame.html"><span>Akame ga Kill</span></a>
@@ -367,6 +369,47 @@
         SeriesAuth.setProgressLimit(select.value);
         refreshProgressViews();
       });
+
+      // The count is only a number until you can see the entries behind it.
+      var toggle = document.getElementById('savedToggle');
+      var list = document.getElementById('savedList');
+
+      function renderList() {
+        SeriesAuth.fetchLibrary(SeriesAuth.get(), function (all) {
+          var items = (all || []).filter(function (item) {
+            return new URL(item.url, window.location.href).pathname.indexOf('/Series/') === 0;
+          });
+          list.textContent = '';
+          if (!items.length) {
+            var empty = document.createElement('li');
+            empty.className = 'saved-empty';
+            empty.textContent = 'Nothing saved yet.';
+            list.appendChild(empty);
+            return;
+          }
+          items.forEach(function (item) {
+            var row = document.createElement('li');
+            var label = document.createElement('span');
+            label.textContent = labelFor(item.url);
+            var where = document.createElement('span');
+            where.className = 'saved-where';
+            where.textContent = clock(item.progress) + ' watched';
+            row.appendChild(label);
+            row.appendChild(where);
+            list.appendChild(row);
+          });
+        });
+      }
+
+      if (toggle) {
+        toggle.addEventListener('click', function () {
+          var open = list.hidden;
+          list.hidden = !open;
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          toggle.textContent = open ? 'Hide what\u2019s saved' : 'Show what\u2019s saved';
+          if (open) renderList();
+        });
+      }
 
       if (clear) {
         clear.addEventListener('click', function () {
