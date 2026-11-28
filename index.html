@@ -34,12 +34,13 @@
         <section id="progressPanel" class="progress-panel" aria-labelledby="progressTitle">
           <h2 id="progressTitle">Saved progress</h2>
           <p>
-            <span id="savedCount">0</span> episodes across <span id="showCount">0</span> shows
+            <span id="savedCount">0</span> <span id="savedUnit">episodes</span> across
+            <span id="showCount">0</span> <span id="showUnit">shows</span>
             <span id="progressSource" class="progress-source"></span>
             <span class="dot">&middot;</span>
             keep the last
             <select id="progressLimit" aria-label="How many episodes to remember per show"></select>
-            episodes of each
+            of each
             <span class="dot">&middot;</span>
             <button id="clearAll" type="button" class="progress-clear">Clear all</button>
           </p>
@@ -334,7 +335,7 @@
       (SeriesAuth.limitChoices || []).forEach(function (value) {
         var option = document.createElement('option');
         option.value = String(value);
-        option.textContent = value + ' episodes per show';
+        option.textContent = String(value);
         select.appendChild(option);
       });
 
@@ -352,6 +353,9 @@
           });
           count.textContent = String(items.length);
           document.getElementById('showCount').textContent = String(Object.keys(shows).length);
+          // "1 show", not "1 shows".
+          document.getElementById('savedUnit').textContent = items.length === 1 ? 'episode' : 'episodes';
+          document.getElementById('showUnit').textContent = Object.keys(shows).length === 1 ? 'show' : 'shows';
 
           // Say whether that number is the account's or just this browser's.
           var source = document.getElementById('progressSource');
