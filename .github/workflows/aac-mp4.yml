@@ -134,9 +134,8 @@ jobs:
               | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {asset: .[0], out: .[1]})'
             echo "AAC_MP4_MATRIX"
           } >> "$GITHUB_OUTPUT"
+          echo "MATRIX-CONTENT: $(tr '\n' '~' < "$GITHUB_OUTPUT" | tail -c 600)"
           {
-            echo "MATRIX-CONTENT: $(cat "$GITHUB_OUTPUT" | tr '\n' '~' | tail -c 600)"
-            echo ""
             echo "### AAC MP4: \`$TAG\`"
             echo ""
             if [ "$PROBE" = true ]; then
@@ -157,7 +156,7 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.max_parallel || '4') }}
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON('{"include":[{"asset":"Demon.Slayer.S02E01.mkv","out":"Demon.Slayer.S02E01.mp4"}]}') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
