@@ -261,3 +261,19 @@ body::before{
 
 /* Where the saved-progress numbers came from */
 .progress-source{color:var(--muted);opacity:0.8;font-size:0.86rem;}
+
+/* The entries behind the saved count */
+.progress-toggle{
+  margin-top:10px;padding:6px 12px;border-radius:8px;cursor:pointer;font-family:inherit;
+  background:transparent;border:1px solid var(--glass-border);color:var(--muted);font-size:0.84rem;
+}
+.progress-toggle:hover{color:#fff;border-color:#fff;}
+.progress-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.saved-list{
+  list-style:none;margin:10px 0 0;padding:12px 14px;border-radius:10px;
+  background:var(--card);border:1px solid var(--glass-border);
+  display:flex;flex-direction:column;gap:6px;max-width:520px;
+}
+.saved-list li{display:flex;justify-content:space-between;gap:12px;font-size:0.88rem;color:var(--text);}
+.saved-list .saved-where{color:var(--muted);}
+.saved-list .saved-empty{color:var(--muted);}
