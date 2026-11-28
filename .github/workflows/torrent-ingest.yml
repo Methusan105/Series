@@ -199,14 +199,15 @@ jobs:
           done < entries.tsv
 
           selected=()
-          for out in $(printf '%s\n' "${!pick_index[@]}" | sort); do
+          while IFS= read -r out; do
+            [ -n "$out" ] || continue
             if [ -n "$have" ] && printf '%s\n' "$have" | grep -Fxq "$out"; then
               echo "skip $out: already in the release"
               continue
             fi
             selected+=("${pick_index[$out]}"$'\t'"$out")
             printf '%-40s <- %s\n' "$out" "${pick_name[$out]}"
-          done
+          done < <(printf '%s\n' "${!pick_index[@]}" | sort)
           echo "count=${#selected[@]}" >> "$GITHUB_OUTPUT"
           if [ "${#selected[@]}" -eq 0 ]; then
             echo "Nothing to do: every file was skipped, filtered out or already uploaded."
