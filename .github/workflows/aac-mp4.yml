@@ -128,13 +128,11 @@ jobs:
             exit 0
           fi
           printf '%s\n' "${selected[@]}" | tr '\t' '\n' | paste - -
-          {
-            echo "matrix<<AAC_MP4_MATRIX"
-            printf '%s\n' "${selected[@]}" \
-              | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {asset: .[0], out: .[1]})'
-            echo "AAC_MP4_MATRIX"
-          } >> "$GITHUB_OUTPUT"
-          echo "MATRIX-CONTENT: $(tr '\n' '~' < "$GITHUB_OUTPUT" | tail -c 600)"
+          # One line, no heredoc: a multi-line value here comes back through
+          # needs.* with the newline intact and fromJSON() then rejects it.
+          matrix=$(printf '%s\n' "${selected[@]}" \
+            | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {asset: .[0], out: .[1]})')
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
           {
             echo "### AAC MP4: \`$TAG\`"
             echo ""
@@ -156,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJSON(inputs.max_parallel || '4') }}
-      matrix: ${{ fromJSON('{"include":[{"asset":"Demon.Slayer.S02E01.mkv","out":"Demon.Slayer.S02E01.mp4"}]}') }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
