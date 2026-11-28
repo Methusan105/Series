@@ -40,6 +40,11 @@ on:
         options:
           - keep
           - delete
+      force:
+        description: "Re-convert assets whose MP4 already exists (replaces it)"
+        required: true
+        default: false
+        type: boolean
       max_parallel:
         description: "How many videos to convert at once"
         required: true
@@ -73,6 +78,7 @@ jobs:
           KEEP: ${{ inputs.keep_audio || 'all' }}
           DROP: ${{ inputs.drop_audio || '' }}
           PROBE: ${{ inputs.probe_only || false }}
+          FORCE: ${{ inputs.force || false }}
         run: |
           set -euo pipefail
           assets=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')
@@ -92,7 +98,7 @@ jobs:
           pending=()
           for name in "${videos[@]}"; do
             target="${name%.*}.mp4"
-            if [ "$PROBE" != true ] && [ "$target" != "$name" ] && in_release "$target"; then
+            if [ "$PROBE" != true ] && [ "$FORCE" != true ] && [ "$target" != "$name" ] && in_release "$target"; then
               echo "skip $name: $target already in the release"
               continue
             fi
@@ -112,7 +118,7 @@ jobs:
             fi
             # A probe still lists a video whose conversion already exists: the
             # point is to see the source's tracks before choosing any.
-            if [ "$PROBE" != true ] && [ "$out" != "$name" ] && in_release "$out"; then
+            if [ "$PROBE" != true ] && [ "$FORCE" != true ] && [ "$out" != "$name" ] && in_release "$out"; then
               echo "skip $name: $out already in the release"
               continue
             fi
