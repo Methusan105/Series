@@ -1,0 +1,315 @@
+name: Torrent into a release (MP4)
+
+# Hand this a magnet link or a .torrent URL and it does the whole job: pick the
+# episodes out of the pack, and for each one spin up a runner that downloads
+# just that file, converts it to an AAC MP4 carrying only the track you ask
+# for, and uploads it to the release.
+#
+# One runner per episode, and each one asks BitTorrent for a single file
+# (--select-file plus --bt-remove-unselected-file), so a 30GB season pack never
+# has to fit on any runner's disk at once.
+#
+# Asset names follow the site: either the download's own name, or
+# <show_name>.SxxExx.mp4 when you give a show name and the file carries an
+# SxxExx marker. A file that is already an AAC MP4 is stream-copied instead of
+# re-encoded.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release to fill (e.g. SN4); created when it does not exist"
+        required: true
+        type: string
+      torrent:
+        description: "Magnet link, or http(s) URL of a .torrent file"
+        required: true
+        type: string
+      show_name:
+        description: "Canonical show name for asset names (e.g. Supernatural); empty keeps the download's own name"
+        required: false
+        default: ""
+        type: string
+      filter:
+        description: "Only convert files whose name matches this regex (optional, e.g. S04E0[1-3])"
+        required: false
+        default: ""
+        type: string
+      keep_audio:
+        description: "Audio tracks to keep: all, or indexes/languages (e.g. eng), or title:<text>"
+        required: true
+        default: "eng"
+        type: string
+      drop_audio:
+        description: "Audio tracks to drop after that: indexes/languages (optional)"
+        required: false
+        default: ""
+        type: string
+      skip_existing:
+        description: "Leave alone any episode whose MP4 the release already holds"
+        required: true
+        default: true
+        type: boolean
+      list_only:
+        description: "Only resolve the torrent and print what it would take, download and convert nothing"
+        required: true
+        default: false
+        type: boolean
+      max_parallel:
+        description: "How many episodes to download and convert at once"
+        required: true
+        default: "4"
+        type: string
+      stall_minutes:
+        description: "Give up when no peer has sent data for this long"
+        required: true
+        default: "20"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: torrent-ingest-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Read the torrent
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+      count: ${{ steps.pick.outputs.count }}
+    steps:
+      - name: Install aria2
+        run: |
+          set -euo pipefail
+          command -v aria2c >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq aria2; }
+          aria2c --version | head -n 1
+
+      - name: Resolve the torrent's file list
+        env:
+          TORRENT: ${{ inputs.torrent }}
+          STALL: ${{ inputs.stall_minutes }}
+        run: |
+          set -euo pipefail
+          mkdir -p meta
+          if [ "${TORRENT#magnet:}" != "$TORRENT" ]; then
+            # A magnet carries no file list, so the metadata has to come from a
+            # peer first. This is the step that fails when nothing can reach one.
+            aria2c --dir=meta --bt-metadata-only=true --bt-save-metadata=true \
+              --enable-dht=true --bt-stop-timeout=$((STALL * 60)) \
+              --summary-interval=0 --console-log-level=warn "$TORRENT" || true
+            torrent=$(find meta -maxdepth 1 -name '*.torrent' -print -quit)
+          else
+            curl -fsSL -o meta/source.torrent "$TORRENT"
+            torrent=meta/source.torrent
+          fi
+          if [ -z "${torrent:-}" ] || [ ! -s "$torrent" ]; then
+            echo "::error::no torrent metadata: no peer answered within ${STALL} minutes"
+            exit 1
+          fi
+          aria2c --show-files "$torrent" > files.txt
+          # One "index<TAB>name<TAB>bytes" line per file: aria2 prints the path on
+          # one line and its size on the next.
+          awk '
+            /^ +[0-9]+\|/ {
+              if (pending) print idx "\t" name "\t0"
+              line = $0
+              sub(/^ +/, "", line)
+              split(line, parts, "|")
+              idx = parts[1]
+              name = parts[2]
+              sub(/^\.\//, "", name)
+              pending = 1
+              next
+            }
+            /^ +\|/ && pending {
+              size = $0
+              sub(/^[^(]*\(/, "", size)
+              sub(/\).*/, "", size)
+              gsub(/,/, "", size)
+              print idx "\t" name "\t" size
+              pending = 0
+              next
+            }
+            END { if (pending) print idx "\t" name "\t0" }
+          ' files.txt > entries.tsv
+          if [ ! -s entries.tsv ]; then
+            echo "::error::the torrent lists no files"
+            exit 1
+          fi
+          {
+            echo "### Torrent file list"
+            echo ""
+            echo "$(wc -l < entries.tsv) file(s) in the torrent."
+            echo ""
+            echo '```'
+            sed -n '/^Files:/,$p' files.txt | head -n 60
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Choose one file per episode
+        id: pick
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.release_tag }}
+          SHOW: ${{ inputs.show_name }}
+          FILTER: ${{ inputs.filter }}
+          SKIP_EXISTING: ${{ inputs.skip_existing }}
+          PROBE: ${{ inputs.list_only }}
+          GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          declare -A pick_name=() pick_index=() pick_size=()
+          have=""
+          if [ "$SKIP_EXISTING" = true ]; then
+            have=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          fi
+          while IFS=$'\t' read -r index file bytes; do
+            [ -n "${file:-}" ] || continue
+            base=$(basename "$file")
+            case ${base,,} in
+              *.mkv|*.mp4|*.m4v) ;;
+              *) continue ;;
+            esac
+            case ${base,,} in
+              *sample*) echo "skip $base: sample"; continue ;;
+            esac
+            if [ -n "$FILTER" ] && ! printf '%s' "$base" | grep -Eqi "$FILTER"; then
+              continue
+            fi
+            stem=${base%.*}
+            if [ -n "$SHOW" ] && [[ $stem =~ [Ss]([0-9]{1,2})[Ee]([0-9]{1,2}) ]]; then
+              season=$(printf '%02d' "$((10#${BASH_REMATCH[1]}))")
+              episode=$(printf '%02d' "$((10#${BASH_REMATCH[2]}))")
+              out="${SHOW}.S${season}E${episode}.mp4"
+            else
+              out="$stem.mp4"
+            fi
+            # Two files for one episode (an MKV beside an MP4, a second copy) must
+            # not race for the same asset name, so the bigger one wins outright.
+            if [ -n "${pick_index[$out]:-}" ] && [ "${bytes:-0}" -le "${pick_size[$out]}" ]; then
+              echo "skip $base: smaller than ${pick_name[$out]} for $out"
+              continue
+            fi
+            pick_index[$out]=$index
+            pick_name[$out]=$base
+            pick_size[$out]=${bytes:-0}
+          done < entries.tsv
+
+          selected=()
+          for out in $(printf '%s\n' "${!pick_index[@]}" | sort); do
+            if [ -n "$have" ] && printf '%s\n' "$have" | grep -Fxq "$out"; then
+              echo "skip $out: already in the release"
+              continue
+            fi
+            selected+=("${pick_index[$out]}"$'\t'"$out")
+            printf '%-40s <- %s\n' "$out" "${pick_name[$out]}"
+          done
+          echo "count=${#selected[@]}" >> "$GITHUB_OUTPUT"
+          if [ "${#selected[@]}" -eq 0 ]; then
+            echo "Nothing to do: every file was skipped, filtered out or already uploaded."
+            echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          matrix=$(printf '%s\n' "${selected[@]}" \
+            | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {index: .[0], out: .[1]})')
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+          {
+            echo "### \`$TAG\`: ${#selected[@]} episode(s) queued"
+            echo ""
+            printf -- '- %s\n' "${selected[@]}" | sed 's/\t/ <- /'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$PROBE" = true ]; then
+            echo "List only: nothing is downloaded or converted."
+          fi
+
+  ingest:
+    name: ${{ matrix.out }}
+    needs: plan
+    if: needs.plan.outputs.count != '0' && inputs.list_only != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      TAG: ${{ inputs.release_tag }}
+      TORRENT: ${{ inputs.torrent }}
+      OUT: ${{ matrix.out }}
+      INDEX: ${{ matrix.index }}
+      KEEP: ${{ inputs.keep_audio }}
+      DROP: ${{ inputs.drop_audio }}
+      STALL: ${{ inputs.stall_minutes }}
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.max_parallel || '4') }}
+      matrix: ${{ fromJSON(format('{{"include":{0}}}', needs.plan.outputs.matrix)) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install aria2 and ffmpeg
+        run: |
+          set -euo pipefail
+          need=()
+          command -v aria2c >/dev/null 2>&1 || need+=(aria2)
+          command -v ffmpeg >/dev/null 2>&1 || need+=(ffmpeg)
+          if [ "${#need[@]}" -gt 0 ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq "${need[@]}"
+          fi
+
+      - name: Make the release when it does not exist
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$REPO" --title "$TAG" --target main
+
+      - name: Download this one episode
+        run: |
+          set -euo pipefail
+          mkdir -p meta dl
+          if [ "${TORRENT#magnet:}" != "$TORRENT" ]; then
+            aria2c --dir=meta --bt-metadata-only=true --bt-save-metadata=true \
+              --enable-dht=true --bt-stop-timeout=$((STALL * 60)) \
+              --summary-interval=0 --console-log-level=warn "$TORRENT" || true
+            torrent=$(find meta -maxdepth 1 -name '*.torrent' -print -quit)
+          else
+            curl -fsSL -o meta/source.torrent "$TORRENT"
+            torrent=meta/source.torrent
+          fi
+          [ -n "${torrent:-}" ] || { echo "::error::no torrent metadata came back"; exit 1; }
+          # Only the file this job owns is fetched, and the rest of the pack is
+          # removed from the disk as it goes, so the runner holds one episode.
+          aria2c --dir=dl --select-file="$INDEX" --bt-remove-unselected-file=true \
+            --follow-torrent=true --seed-time=0 \
+            --enable-dht=true --enable-peer-exchange=true --bt-max-peers=120 \
+            --bt-stop-timeout=$((STALL * 60)) --file-allocation=none \
+            --max-connection-per-server=16 --summary-interval=30 \
+            --console-log-level=warn "$torrent"
+          du -sh dl
+
+      - name: Convert it and upload it
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          source_file=$(find dl -type f \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.m4v' \) -print -quit)
+          [ -n "$source_file" ] || { echo "::error::the download holds no video file"; exit 1; }
+          opts=(--keep "$KEEP")
+          [ -n "$DROP" ] && opts+=(--drop "$DROP")
+          bash .github/scripts/aac-mp4.sh "$source_file" "build/$OUT" "${opts[@]}"
+          size=$(stat -c%s "build/$OUT")
+          if [ "$size" -ge $((2 * 1024 * 1024 * 1024)) ]; then
+            echo "::error::$OUT is $((size / 1024 / 1024)) MiB, over GitHub's 2 GiB release asset limit"
+            exit 1
+          fi
+          gh release upload "$TAG" "build/$OUT" --repo "$REPO" --clobber
+          rm -f "$source_file" "build/$OUT"
+          {
+            echo "### \`$OUT\`"
+            echo ""
+            echo "From \`$(basename "$source_file")\`, $((size / 1024 / 1024)) MiB, keep \`$KEEP\`."
+          } >> "$GITHUB_STEP_SUMMARY"
